@@ -21,8 +21,10 @@ export async function POST(req:NextRequest){
     const state=signMetaState({workspaceId:mem.workspace_id,userId:user.id,channel,exp:Date.now()+10*60*1000})
 
     if(channel==='instagram'){
+      const instagramAppId=process.env.INSTAGRAM_APP_ID
+      if(!instagramAppId)return NextResponse.json({error:'Falta INSTAGRAM_APP_ID en Vercel.'},{status:500})
       const scopes=process.env.INSTAGRAM_SCOPES||'instagram_business_basic,instagram_business_manage_messages'
-      const params=new URLSearchParams({client_id:appId,redirect_uri:redirectUri,state,response_type:'code',scope:scopes})
+      const params=new URLSearchParams({client_id:instagramAppId,redirect_uri:redirectUri,state,response_type:'code',scope:scopes})
       params.set('enable_fb_login','0')
       params.set('force_authentication','1')
       return NextResponse.json({url:`https://www.instagram.com/oauth/authorize?${params.toString()}`})
