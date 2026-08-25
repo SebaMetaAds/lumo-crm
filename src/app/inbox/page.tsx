@@ -65,7 +65,7 @@ export default function Inbox(){
   if(!workspaceId)throw new Error('Workspace no disponible')
   const {data:found}=await supabase.from('channel_connections').select('id,channel,name,settings').eq('workspace_id',workspaceId).eq('channel',channel).contains('settings',{mode:'test'}).limit(1)
   if(found?.length)return found[0] as Connection
-  const {data,error}=await supabase.from('channel_connections').insert({workspace_id:workspaceId,channel,name:`${labelChannel(channel)} · Modo prueba`,status:'active',settings:{mode:'test'}}).select('id,channel,name,settings').single()
+  const {data,error}=await supabase.from('channel_connections').insert({workspace_id:workspaceId,channel,name:`${labelChannel(channel)} · Modo prueba`,status:'connected',settings:{mode:'test'}}).select('id,channel,name,settings').single()
   if(error)throw error; return data as Connection
  }
  async function createConversation(e:FormEvent){
