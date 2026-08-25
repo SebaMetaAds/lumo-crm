@@ -1,4 +1,5 @@
 'use client'
+import './sales-process.css'
 import { DragEvent, useEffect, useMemo, useState } from 'react'
 import { AppShell } from '@/components/AppShell'
 import { supabase } from '@/lib/supabase'
@@ -52,7 +53,6 @@ export default function SalesProcess(){
  }
  function onDragStart(e:DragEvent,op:Opportunity){setDragging(op.id);e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',op.id)}
  function onDrop(e:DragEvent,stage:Stage){e.preventDefault();const id=e.dataTransfer.getData('text/plain')||dragging;const op=ops.find(o=>o.id===id);setDragging(null);setOverStage(null);if(op)moveOpportunity(op,stage)}
- const openStages=stages.filter(s=>!s.is_lost)
  const totalOpen=ops.filter(o=>!stages.find(s=>s.id===o.stage_id)?.is_lost).reduce((sum,o)=>sum+Number(o.amount||0),0)
  return <AppShell><div className="page sales-process-page"><div className="page-head"><div><h1>Proceso de ventas</h1><p>Mové oportunidades entre etapas y seguí cada venta visualmente.</p></div></div>
  {error&&<div className="error-banner">{error}</div>}
