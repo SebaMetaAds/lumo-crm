@@ -35,10 +35,13 @@ export function verifyMetaState(state:string){
 
 export function verifyMetaWebhookSignature(raw:string,signature:string|null){
   if(!signature)return false
-  const {appSecret}=metaConfig()
-  const expected='sha256='+crypto.createHmac('sha256',appSecret).update(raw).digest('hex')
-  const a=Buffer.from(signature),b=Buffer.from(expected)
-  return a.length===b.length&&crypto.timingSafeEqual(a,b)
+  const secrets=[process.env.META_APP_SECRET,process.env.INSTAGRAM_APP_SECRET].filter(Boolean) as string[]
+  for(const secret of secrets){
+    const expected='sha256='+crypto.createHmac('sha256',secret).update(raw).digest('hex')
+    const a=Buffer.from(signature),b=Buffer.from(expected)
+    if(a.length===b.length&&crypto.timingSafeEqual(a,b))return true
+  }
+  return false
 }
 
 export async function metaJson(url:string,init?:RequestInit){
