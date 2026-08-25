@@ -51,9 +51,7 @@ export async function GET(req:NextRequest){
         settings:{mode:'live',provider:'meta',page_id:String(page.id),connected_at:new Date().toISOString()}
       },{onConflict:'workspace_id,channel,external_account_id'}).select('id').single()
       if(fbe)throw fbe
-      const {error:fbs}=await admin.schema('private').from('channel_connection_secrets').upsert({
-        connection_id:fb.id,workspace_id:oauth.workspaceId,access_token:pageToken,provider:'meta',token_type:'page',metadata:{page_id:String(page.id)}
-      },{onConflict:'connection_id'})
+      const {error:fbs}=await admin.rpc('upsert_channel_connection_secret',{p_connection_id:fb.id,p_workspace_id:oauth.workspaceId,p_access_token:pageToken,p_provider:'meta',p_token_type:'page',p_expires_at:null,p_metadata:{page_id:String(page.id)}})
       if(fbs)throw fbs
       created++
 
@@ -73,9 +71,7 @@ export async function GET(req:NextRequest){
           settings:{mode:'live',provider:'meta',page_id:String(page.id),instagram_id:String(ig.id),connected_at:new Date().toISOString()}
         },{onConflict:'workspace_id,channel,external_account_id'}).select('id').single()
         if(ige)throw ige
-        const {error:igs}=await admin.schema('private').from('channel_connection_secrets').upsert({
-          connection_id:igc.id,workspace_id:oauth.workspaceId,access_token:pageToken,provider:'meta',token_type:'page',metadata:{page_id:String(page.id),instagram_id:String(ig.id)}
-        },{onConflict:'connection_id'})
+        const {error:igs}=await admin.rpc('upsert_channel_connection_secret',{p_connection_id:igc.id,p_workspace_id:oauth.workspaceId,p_access_token:pageToken,p_provider:'meta',p_token_type:'page',p_expires_at:null,p_metadata:{page_id:String(page.id),instagram_id:String(ig.id)}})
         if(igs)throw igs
         created++
       }
