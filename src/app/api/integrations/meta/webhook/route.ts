@@ -20,12 +20,22 @@ export async function POST(req:NextRequest){
     const raw=await req.text()
     if(!verifyMetaWebhookSignature(raw,req.headers.get('x-hub-signature-256')))return new NextResponse('Invalid signature',{status:401})
     const payload=JSON.parse(raw)
+    console.info('Meta webhook shape',JSON.stringify({
+      object:payload?.object||null,
+      entries:(payload?.entry||[]).map((entry:any)=>({
+        id:entry?.id?String(entry.id):null,
+        messaging_count:Array.isArray(entry?.messaging)?entry.messaging.length:0,
+        change_fields:Array.isArray(entry?.changes)?entry.changes.map((c:any)=>c?.field).filter(Boolean):[],
+        recipient_ids:Array.isArray(entry?.messaging)?entry.messaging.map((e:any)=>e?.recipient?.id?String(e.recipient.id):null).filter(Boolean):[]
+      }))
+    }))
     const channel=payload.object==='instagram'?'instagram':'facebook'
     const admin=supabaseAdmin()
     for(const entry of payload.entry||[]){
       const accountId=String(entry.id||'')
       if(!accountId)continue
       const {data:connections}=await admin.from('channel_connections').select('id,workspace_id,channel,external_account_id').eq('channel',channel).eq('external_account_id',accountId).in('status',['connected','active']).limit(5)
+      console.info('Meta webhook connection match',JSON.stringify({channel,accountId,matches:connections?.length||0}))
       for(const connection of connections||[]){
         for(const event of entry.messaging||[]){
           if(!event?.sender?.id||!event?.message)continue
