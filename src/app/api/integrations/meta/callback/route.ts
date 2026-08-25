@@ -20,7 +20,9 @@ export async function GET(req:NextRequest){
 }
 
 async function connectInstagram(code:string,workspaceId:string,baseUrl:string){
-  const {appId,appSecret}=metaConfig()
+  const appId=process.env.INSTAGRAM_APP_ID
+  const appSecret=process.env.INSTAGRAM_APP_SECRET
+  if(!appId||!appSecret)throw new Error('Faltan INSTAGRAM_APP_ID o INSTAGRAM_APP_SECRET.')
   const redirectUri=`${baseUrl}/api/integrations/meta/callback`
   const body=new URLSearchParams({client_id:appId,client_secret:appSecret,grant_type:'authorization_code',redirect_uri:redirectUri,code})
   const short=await metaJson('https://api.instagram.com/oauth/access_token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body})
