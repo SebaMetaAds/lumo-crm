@@ -27,13 +27,14 @@ export async function POST(req:NextRequest){
     if(connection.settings?.mode==='test')return NextResponse.json({error:'Las conversaciones de prueba se responden localmente.'},{status:400})
     if(!conversation.external_conversation_id)return NextResponse.json({error:'Falta destinatario externo.'},{status:400})
 
-    const {data:secret,error:se}=await admin.schema('private').from('channel_connection_secrets').select('access_token').eq('connection_id',connection.id).single()
-    if(se||!secret)return NextResponse.json({error:'La conexión no tiene credenciales activas.'},{status:400})
+    const {data:secretRows,error:se}=await admin.rpc('get_channel_connection_secret',{p_connection_id:connection.id})
+    const secret=secretRows?.[0]
+    if(se||!secret?.access_token)return NextResponse.json({error:'La conexión no tiene credenciales activas.'},{status:400})
 
     const endpoint=`${metaGraph}/${connection.external_account_id}/messages`
     const sent=await metaJson(endpoint,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${secret.access_token}`},body:JSON.stringify({recipient:{id:conversation.external_conversation_id},message:{text}})})
     const now=new Date().toISOString()
-    const {data:message,error:me}=await admin.from('messages').insert({workspace_id:conversation.workspace_id,conversation_id:conversation.id,external_message_id:sent.message_id||null,direction:'outgoing',sender_type:'user',sender_user_id:user.id,body:text,message_type:'text',status:'sent',attachments:[],metadata:{mode:'live',provider:'meta'},sent_at:now}).select('id,direction,sender_type,body,sent_at,status').single()
+    const {data:message,error:me}=await admin.from('messages').insert({workspace_id:conversation.workspace_id,conversation_id:conversation.id,external_message_id:sent.message_id||null,direction:'outgoing',sender_type:'user',sender_user_id:user.id,body:text,message_type:'text',status:'sent',attachments:[],metadata:{mode:'live',provider:'meta',sent_via_api:true},sent_at:now}).select('id,direction,sender_type,body,sent_at,status').single()
     if(me)throw me
     await admin.from('conversations').update({last_message_at:now,last_outgoing_at:now,status:'open'}).eq('id',conversation.id)
     return NextResponse.json({message})
