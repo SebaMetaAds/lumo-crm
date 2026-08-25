@@ -4,11 +4,14 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 
 export async function GET(req:NextRequest){
   const url=new URL(req.url)
-  const mode=url.searchParams.get('hub.mode')
-  const token=url.searchParams.get('hub.verify_token')
-  const challenge=url.searchParams.get('hub.challenge')
+  const mode=(url.searchParams.get('hub.mode')||'').trim()
+  const token=(url.searchParams.get('hub.verify_token')||'').trim()
+  const challenge=url.searchParams.get('hub.challenge')||''
   const {verifyToken}=metaConfig()
-  if(mode==='subscribe'&&verifyToken&&token===verifyToken)return new NextResponse(challenge||'',{status:200})
+  const expected=(verifyToken||'').trim()
+  if(mode==='subscribe'&&expected&&token===expected){
+    return new NextResponse(challenge,{status:200,headers:{'Content-Type':'text/plain'}})
+  }
   return new NextResponse('Forbidden',{status:403})
 }
 
