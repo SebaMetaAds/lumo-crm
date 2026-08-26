@@ -1,7 +1,7 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Inbox, Users, Building2, BadgeDollarSign, KanbanSquare, CheckSquare, Activity, Package, BarChart3, Settings } from 'lucide-react'
+import { LayoutDashboard, Inbox, Users, Building2, BadgeDollarSign, KanbanSquare, CheckSquare, Activity, Package, BarChart3, Workflow, Settings } from 'lucide-react'
 
 const items = [
   ['/', 'Dashboard', LayoutDashboard],
@@ -13,6 +13,7 @@ const items = [
   ['/tasks', 'Tareas', CheckSquare],
   ['/activity', 'Actividad', Activity],
   ['/products', 'Productos', Package],
+  ['/automations', 'Automatizaciones', Workflow],
   ['/reports', 'Reportes', BarChart3],
   ['/settings', 'Configuración', Settings],
 ] as const
