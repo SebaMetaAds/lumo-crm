@@ -60,7 +60,16 @@ function matchesOne(config:Condition,payload:Record<string,any>){
   if(!config?.field)return true
   const actual=getPath(payload,String(config.field))
   const expected=config.value
-  switch(config.operator||'equals'){
+  const operator=config.operator||'equals'
+  if(['greater_than','greater_or_equal','less_than','less_or_equal'].includes(operator)){
+    const a=Number(actual),e=Number(expected)
+    if(!Number.isFinite(a)||!Number.isFinite(e))return false
+    if(operator==='greater_than')return a>e
+    if(operator==='greater_or_equal')return a>=e
+    if(operator==='less_than')return a<e
+    return a<=e
+  }
+  switch(operator){
     case 'not_equals':return String(actual??'').toLowerCase()!==String(expected??'').toLowerCase()
     case 'contains':return String(actual??'').toLowerCase().includes(String(expected??'').toLowerCase())
     case 'not_contains':return !String(actual??'').toLowerCase().includes(String(expected??'').toLowerCase())
@@ -116,7 +125,7 @@ async function executeAction(admin:any,workspaceId:string,type:string,config:any
       title,
       contact_id:contactId,
       conversation_id:conversationId,
-      priority:String(config?.priority||'normal'),
+      priority:String(config?.priority||payload.suggested_priority||'normal'),
       status:'open',
     }).select('id,title').single()
     if(error)throw error
