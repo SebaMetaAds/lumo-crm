@@ -4,7 +4,7 @@ import { metaJson } from '@/lib/meta'
 
 const EXPECTED_META_APP_ID='2161366078595716'
 const EXPECTED_INSTAGRAM_APP_ID='1653491322968356'
-const DIAGNOSTIC_VERSION='2026-08-26-instagram-env-fix'
+const DIAGNOSTIC_VERSION='2026-08-26-instagram-secret-refresh'
 
 export async function GET(){
   return inspect(false)
