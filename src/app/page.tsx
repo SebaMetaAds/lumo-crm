@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { AppShell } from '@/components/AppShell'
 import { supabase } from '@/lib/supabase'
-import { MessageCircle, Target, CheckCircle2, Clock3, AlertCircle, ListTodo, ArrowUpRight } from 'lucide-react'
+import { MessageCircle, Target, CheckCircle2, Clock3, AlertCircle, ArrowUpRight, Wifi } from 'lucide-react'
 import './dashboard.css'
 
 type Stage={id:string;name:string;position:number;is_won:boolean;is_lost:boolean}
@@ -12,17 +12,22 @@ type Conversation={id:string;status:string;last_message_at:string|null;unread_co
 type Task={id:string;title:string;status:string;priority:string;due_at:string|null;opportunity_id:string|null;opportunities:{name:string}|null}
 
 export default function Dashboard(){
+ const [workspaceId,setWorkspaceId]=useState<string|null>(null)
  const [stages,setStages]=useState<Stage[]>([])
  const [ops,setOps]=useState<Opportunity[]>([])
  const [conversations,setConversations]=useState<Conversation[]>([])
  const [tasks,setTasks]=useState<Task[]>([])
  const [error,setError]=useState('')
+ const [live,setLive]=useState(false)
  useEffect(()=>{bootstrap()},[])
  async function bootstrap(){
   const {data:{user}}=await supabase.auth.getUser();if(!user)return
   const {data:mem,error:me}=await supabase.from('workspace_members').select('workspace_id').eq('user_id',user.id).eq('status','active').limit(1).single()
   if(me||!mem){setError(me?.message||'No encontramos tu espacio de trabajo.');return}
-  const wid=mem.workspace_id
+  setWorkspaceId(mem.workspace_id);await load(mem.workspace_id)
+ }
+ async function load(wid=workspaceId){
+  if(!wid)return
   const [{data:ss,error:se},{data:oo,error:oe},{data:cc,error:ce},{data:tt,error:te}]=await Promise.all([
    supabase.from('sales_stages').select('id,name,position,is_won,is_lost').eq('workspace_id',wid).order('position'),
    supabase.from('opportunities').select('id,name,amount,currency,stage_id,closed_at,created_at').eq('workspace_id',wid).order('created_at',{ascending:false}),
@@ -32,6 +37,11 @@ export default function Dashboard(){
   if(se||oe||ce||te)setError(se?.message||oe?.message||ce?.message||te?.message||'No pudimos cargar el dashboard')
   setStages((ss||[]) as Stage[]);setOps((oo||[]) as Opportunity[]);setConversations((cc||[]) as unknown as Conversation[]);setTasks((tt||[]) as unknown as Task[])
  }
+ useEffect(()=>{if(!workspaceId)return;const channel=supabase.channel(`dashboard-live-${workspaceId}`)
+  .on('postgres_changes',{event:'*',schema:'public',table:'conversations',filter:`workspace_id=eq.${workspaceId}`},()=>load(workspaceId))
+  .on('postgres_changes',{event:'*',schema:'public',table:'opportunities',filter:`workspace_id=eq.${workspaceId}`},()=>load(workspaceId))
+  .on('postgres_changes',{event:'*',schema:'public',table:'tasks',filter:`workspace_id=eq.${workspaceId}`},()=>load(workspaceId))
+  .subscribe(s=>setLive(s==='SUBSCRIBED'));return()=>{supabase.removeChannel(channel);setLive(false)}},[workspaceId])
  const now=new Date();const monthStart=new Date(now.getFullYear(),now.getMonth(),1)
  const stageMap=useMemo(()=>Object.fromEntries(stages.map(s=>[s.id,s])),[stages])
  const openOps=ops.filter(o=>{const s=o.stage_id?stageMap[o.stage_id]:null;return !s?.is_won&&!s?.is_lost})
@@ -48,13 +58,13 @@ export default function Dashboard(){
  const maxStage=Math.max(1,...stages.map(s=>ops.filter(o=>o.stage_id===s.id).length))
  const recentConversations=openConversations.slice(0,5)
  const nextTasks=pendingTasks.filter(t=>!overdueTasks.some(o=>o.id===t.id)).slice(0,5)
- return <AppShell><div className="page"><div className="page-head"><div><h1>Buenos días</h1><p>Esto es lo que necesita tu atención hoy.</p></div><Link href="/activity" className="secondary">Ver actividad</Link></div>
+ return <AppShell><div className="page"><div className="page-head"><div><h1>Buenos días</h1><p>Esto es lo que necesita tu atención hoy.</p></div><div style={{display:'flex',alignItems:'center',gap:9}}><span className="soft-live"><i className="live-dot"/><Wifi size={13}/>{live?'Actualización en tiempo real':'Conectando…'}</span><Link href="/activity" className="secondary">Ver actividad</Link></div></div>
  {error&&<div className="error-banner">{error}</div>}
- <div className="stats"><div className="stat"><MessageCircle/><span>Conversaciones abiertas</span><strong>{openConversations.length}</strong><small>{openConversations.reduce((s,c)=>s+c.unread_count,0)} sin leer</small><Link className="stat-link" href="/inbox">Ir al Inbox</Link></div><div className="stat"><Target/><span>Oportunidades abiertas</span><strong>{openOps.length}</strong><small>{money(openOps.reduce((s,o)=>s+Number(o.amount||0),0))} en proceso</small><Link className="stat-link" href="/sales-process">Ver proceso</Link></div><div className="stat success"><CheckCircle2/><span>Ganadas este mes</span><strong>{wonMonth.length}</strong><small>{money(wonMonth.reduce((s,o)=>s+Number(o.amount||0),0))} cerrados</small><Link className="stat-link" href="/opportunities">Ver oportunidades</Link></div><div className={`stat ${overdueTasks.length?'alert':''}`}><Clock3/><span>Tareas pendientes</span><strong>{pendingTasks.length}</strong><small>{overdueTasks.length} vencidas</small><Link className="stat-link" href="/tasks">Ver tareas</Link></div></div>
+ <div className="stats"><Link href="/inbox" className="stat interactive-card" style={{textDecoration:'none',color:'inherit'}}><MessageCircle/><span>Conversaciones abiertas</span><strong>{openConversations.length}</strong><small>{openConversations.reduce((s,c)=>s+c.unread_count,0)} sin leer</small><span className="stat-link">Ir al Inbox</span></Link><Link href="/sales-process" className="stat interactive-card" style={{textDecoration:'none',color:'inherit'}}><Target/><span>Oportunidades abiertas</span><strong>{openOps.length}</strong><small>{money(openOps.reduce((s,o)=>s+Number(o.amount||0),0))} en proceso</small><span className="stat-link">Ver proceso</span></Link><Link href="/opportunities" className="stat success interactive-card" style={{textDecoration:'none',color:'inherit'}}><CheckCircle2/><span>Ganadas este mes</span><strong>{wonMonth.length}</strong><small>{money(wonMonth.reduce((s,o)=>s+Number(o.amount||0),0))} cerrados</small><span className="stat-link">Ver oportunidades</span></Link><Link href="/tasks" className={`stat interactive-card ${overdueTasks.length?'alert':''}`} style={{textDecoration:'none',color:'inherit'}}><Clock3/><span>Tareas pendientes</span><strong>{pendingTasks.length}</strong><small>{overdueTasks.length} vencidas</small><span className="stat-link">Ver tareas</span></Link></div>
  <div className="grid2"><section className="panel"><div className="panel-title"><div><h2>Qué necesita tu atención</h2><p>Prioridades comerciales de hoy</p></div><ArrowUpRight size={19}/></div>{focus.length===0?<div className="empty"><strong>Todo bajo control</strong><span>No hay tareas vencidas ni mensajes pendientes.</span></div>:<div className="dashboard-focus">{focus.map(item=><div className="focus-item" key={item.key}><div className="focus-icon">{item.icon==='message'?<MessageCircle size={17}/>:item.icon==='today'?<Clock3 size={17}/>:<AlertCircle size={17}/>}</div><div className="focus-copy"><strong>{item.title}</strong><span>{item.subtitle}</span></div><Link href={item.href}>Resolver</Link></div>)}</div>}</section>
  <section className="panel"><div className="panel-title"><div><h2>Proceso de ventas</h2><p>Oportunidades por etapa</p></div><Link className="inline-link" href="/sales-process">Abrir tablero</Link></div><div className="stage-summary">{stages.map(s=>{const count=ops.filter(o=>o.stage_id===s.id).length;return <div className="stage-row" key={s.id}><span>{s.name}</span><div className="stage-bar"><i style={{width:`${(count/maxStage)*100}%`}}/></div><b>{count}</b></div>})}</div></section></div>
- <div className="dashboard-bottom"><section className="panel"><div className="panel-title"><div><h2>Conversaciones recientes</h2><p>Últimos clientes en contacto</p></div><Link className="inline-link" href="/inbox">Ver todas</Link></div>{recentConversations.length===0?<div className="empty-compact">Todavía no hay conversaciones abiertas.</div>:<div className="mini-list">{recentConversations.map(c=><div className="mini-row" key={c.id}><div><strong>{c.contacts?`${c.contacts.first_name} ${c.contacts.last_name||''}`:'Contacto'}</strong><span>{c.unread_count?`${c.unread_count} sin leer`:'Al día'}</span></div><b>{c.last_message_at?formatDate(c.last_message_at):''}</b></div>)}</div>}</section>
- <section className="panel"><div className="panel-title"><div><h2>Próximas tareas</h2><p>Seguimientos que vienen</p></div><Link className="inline-link" href="/tasks">Ver todas</Link></div>{nextTasks.length===0?<div className="empty-compact">No hay tareas próximas.</div>:<div className="mini-list">{nextTasks.map(t=><div className="mini-row" key={t.id}><div><strong>{t.title}</strong><span>{t.opportunities?.name||labelPriority(t.priority)}</span></div><b>{t.due_at?formatDate(t.due_at):'Sin fecha'}</b></div>)}</div>}</section></div>
+ <div className="dashboard-bottom"><section className="panel"><div className="panel-title"><div><h2>Conversaciones recientes</h2><p>Últimos clientes en contacto</p></div><Link className="inline-link" href="/inbox">Ver todas</Link></div>{recentConversations.length===0?<div className="empty-compact">Todavía no hay conversaciones abiertas.</div>:<div className="mini-list">{recentConversations.map(c=><Link href="/inbox" className="mini-row" style={{textDecoration:'none',color:'inherit'}} key={c.id}><div><strong>{c.contacts?`${c.contacts.first_name} ${c.contacts.last_name||''}`:'Contacto'}</strong><span>{c.unread_count?`${c.unread_count} sin leer`:'Al día'}</span></div><b>{c.last_message_at?formatDate(c.last_message_at):''}</b></Link>)}</div>}</section>
+ <section className="panel"><div className="panel-title"><div><h2>Próximas tareas</h2><p>Seguimientos que vienen</p></div><Link className="inline-link" href="/tasks">Ver todas</Link></div>{nextTasks.length===0?<div className="empty-compact">No hay tareas próximas.</div>:<div className="mini-list">{nextTasks.map(t=><Link href="/tasks" className="mini-row" style={{textDecoration:'none',color:'inherit'}} key={t.id}><div><strong>{t.title}</strong><span>{t.opportunities?.name||labelPriority(t.priority)}</span></div><b>{t.due_at?formatDate(t.due_at):'Sin fecha'}</b></Link>)}</div>}</section></div>
  </div></AppShell>
 }
 function sameDay(a:Date,b:Date){return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate()}
