@@ -4,6 +4,9 @@ type AutomationEvent={
   payload:Record<string,any>
 }
 
+type Condition={field:string;operator?:string;value:any}
+type Action={type:string;config?:Record<string,any>}
+
 export async function runAutomations(admin:any,event:AutomationEvent){
   const {data:rules,error}=await admin.from('automations')
     .select('id,name,condition_config,action_type,action_config')
@@ -13,7 +16,7 @@ export async function runAutomations(admin:any,event:AutomationEvent){
   if(error){console.error('Automation load error',error);return}
 
   for(const rule of rules||[]){
-    if(!matchesCondition(rule.condition_config,event.payload))continue
+    if(!matchesConditions(rule.condition_config,event.payload))continue
     const startedAt=new Date().toISOString()
     const {data:run,error:runError}=await admin.from('automation_runs').insert({
       workspace_id:event.workspaceId,
@@ -25,9 +28,15 @@ export async function runAutomations(admin:any,event:AutomationEvent){
     if(runError){console.error('Automation run insert error',runError);continue}
 
     try{
-      const result=await executeAction(admin,event.workspaceId,rule.action_type,rule.action_config||{},event.payload)
+      const actions=normalizeActions(rule.action_type,rule.action_config)
+      const results=[]
+      for(let index=0;index<actions.length;index++){
+        const action=actions[index]
+        const result=await executeAction(admin,event.workspaceId,action.type,action.config||{},event.payload)
+        results.push({index,type:action.type,result})
+      }
       const finishedAt=new Date().toISOString()
-      await admin.from('automation_runs').update({status:'success',action_result:result,finished_at:finishedAt}).eq('id',run.id)
+      await admin.from('automation_runs').update({status:'success',action_result:{actions:results},finished_at:finishedAt}).eq('id',run.id)
       await admin.from('automations').update({last_run_at:finishedAt,updated_at:finishedAt}).eq('id',rule.id).eq('workspace_id',event.workspaceId)
     }catch(err:any){
       const finishedAt=new Date().toISOString()
@@ -38,16 +47,31 @@ export async function runAutomations(admin:any,event:AutomationEvent){
   }
 }
 
-function matchesCondition(config:any,payload:Record<string,any>){
-  if(!config||!config.field)return true
+function matchesConditions(config:any,payload:Record<string,any>){
+  if(!config)return true
+  const conditions:Condition[]=Array.isArray(config.conditions)?config.conditions:(config.field?[config]:[])
+  if(!conditions.length)return true
+  const logic=String(config.logic||'and').toLowerCase()
+  const checks=conditions.map(c=>matchesOne(c,payload))
+  return logic==='or'?checks.some(Boolean):checks.every(Boolean)
+}
+
+function matchesOne(config:Condition,payload:Record<string,any>){
+  if(!config?.field)return true
   const actual=getPath(payload,String(config.field))
   const expected=config.value
   switch(config.operator||'equals'){
-    case 'not_equals':return String(actual??'')!==String(expected??'')
+    case 'not_equals':return String(actual??'').toLowerCase()!==String(expected??'').toLowerCase()
     case 'contains':return String(actual??'').toLowerCase().includes(String(expected??'').toLowerCase())
+    case 'not_contains':return !String(actual??'').toLowerCase().includes(String(expected??'').toLowerCase())
     case 'equals':
     default:return String(actual??'').toLowerCase()===String(expected??'').toLowerCase()
   }
+}
+
+function normalizeActions(actionType:string,actionConfig:any):Action[]{
+  if(Array.isArray(actionConfig?.actions))return actionConfig.actions.filter((a:any)=>a?.type)
+  return [{type:actionType,config:actionConfig||{}}]
 }
 
 function getPath(obj:any,path:string){return path.split('.').reduce((acc,key)=>acc?.[key],obj)}
@@ -92,7 +116,7 @@ async function executeAction(admin:any,workspaceId:string,type:string,config:any
       title,
       contact_id:contactId,
       conversation_id:conversationId,
-      priority:'normal',
+      priority:String(config?.priority||'normal'),
       status:'open',
     }).select('id,title').single()
     if(error)throw error
