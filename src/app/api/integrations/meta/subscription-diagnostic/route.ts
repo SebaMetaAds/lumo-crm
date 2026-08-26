@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { metaJson } from '@/lib/meta'
 
+const EXPECTED_META_APP_ID='2161366078595716'
+
 export async function GET(){
   return inspect(false)
 }
@@ -48,6 +50,7 @@ async function inspect(repair:boolean){
               valid:Boolean(data?.is_valid),
               matches_instagram_app_id:Boolean(tokenAppId&&instagramAppId&&tokenAppId===instagramAppId),
               matches_meta_app_id:Boolean(tokenAppId&&metaAppId&&tokenAppId===metaAppId),
+              matches_expected_app_id:Boolean(tokenAppId&&tokenAppId===EXPECTED_META_APP_ID),
               token_type:data?.type||null
             }
           }catch(err:any){
@@ -79,7 +82,8 @@ async function inspect(repair:boolean){
             return {
               fields:Array.isArray(app?.subscribed_fields)?app.subscribed_fields:[],
               matches_instagram_app_id:Boolean(appId&&instagramAppId&&appId===instagramAppId),
-              matches_meta_app_id:Boolean(appId&&metaAppId&&appId===metaAppId)
+              matches_meta_app_id:Boolean(appId&&metaAppId&&appId===metaAppId),
+              matches_expected_app_id:Boolean(appId&&appId===EXPECTED_META_APP_ID)
             }
           })
         })
@@ -88,7 +92,18 @@ async function inspect(repair:boolean){
       }
     }
 
-    return NextResponse.json({ok:true,mode:repair?'repair':'inspect',config:{has_instagram_app_id:Boolean(instagramAppId),has_instagram_app_secret:Boolean(instagramAppSecret),has_meta_app_id:Boolean(metaAppId)},results})
+    return NextResponse.json({
+      ok:true,
+      mode:repair?'repair':'inspect',
+      config:{
+        has_instagram_app_id:Boolean(instagramAppId),
+        has_instagram_app_secret:Boolean(instagramAppSecret),
+        has_meta_app_id:Boolean(metaAppId),
+        instagram_app_id_matches_expected:Boolean(instagramAppId&&instagramAppId===EXPECTED_META_APP_ID),
+        meta_app_id_matches_expected:Boolean(metaAppId&&metaAppId===EXPECTED_META_APP_ID)
+      },
+      results
+    })
   }catch(err:any){
     return NextResponse.json({ok:false,error:err?.message||'diagnostic_failed'},{status:500})
   }
