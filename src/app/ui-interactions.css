@@ -1,0 +1,35 @@
+/* Lumo UI Interaction Layer */
+@keyframes lumoFadeUp{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+@keyframes lumoPulse{0%,100%{box-shadow:0 0 0 0 rgba(115,87,217,.0)}50%{box-shadow:0 0 0 5px rgba(115,87,217,.08)}}
+@keyframes lumoShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.page{animation:lumoFadeUp .28s ease both}
+.page>.panel,.page>.stats,.page>.stats-grid,.page>.grid2,.page>.dashboard-bottom,.page>.kanban-wrap{animation:lumoFadeUp .34s ease both}
+.stat,.stat-card,.panel{transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+.stat:hover,.stat-card:hover{transform:translateY(-3px);box-shadow:0 12px 28px rgba(16,24,40,.08)!important;border-color:rgba(115,87,217,.18)!important}
+.panel:hover{box-shadow:0 7px 22px rgba(16,24,40,.055)}
+.stat-link,.inline-link{position:relative;transition:color .16s ease,transform .16s ease}
+.stat-link:hover,.inline-link:hover{color:var(--purple);transform:translateX(2px)}
+.focus-item,.mini-row,.conversation-item,.deal-card{transition:transform .16s ease,background .16s ease,box-shadow .16s ease,border-color .16s ease}
+.focus-item:hover,.mini-row:hover{transform:translateX(3px);background:#faf9ff}
+.conversation-item:hover{transform:translateX(2px)}
+.deal-card:hover{transform:translateY(-3px);box-shadow:0 10px 24px rgba(16,24,40,.09)}
+.deal-card.dragging{transform:rotate(1.5deg) scale(1.02);opacity:.76;box-shadow:0 16px 36px rgba(16,24,40,.16)}
+.kanban-column.drag-over{transform:translateY(-2px);box-shadow:0 0 0 2px rgba(115,87,217,.16),0 16px 34px rgba(16,24,40,.07)}
+.kanban-column{transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+.stage-bar i{transition:width .42s cubic-bezier(.2,.8,.2,1)}
+.unread{animation:lumoPulse 2.2s ease-in-out infinite}
+.primary:disabled,.secondary:disabled,.iconbtn:disabled{cursor:not-allowed;opacity:.55;transform:none!important}
+button:active{transform:scale(.985)}
+.navitem{position:relative;overflow:hidden}
+.navitem:after{content:'';position:absolute;inset:auto 12px 5px;transform:scaleX(0);height:1px;background:rgba(169,147,255,.5);transform-origin:left;transition:transform .18s ease}
+.navitem:hover:after,.navitem.active:after{transform:scaleX(1)}
+.message-bubble{animation:lumoFadeUp .2s ease both}
+.modal{animation:lumoFadeUp .18s ease both}
+.loading:after{content:'';width:12px;height:12px;margin-left:8px;border:2px solid rgba(115,87,217,.2);border-top-color:var(--purple);border-radius:50%;display:inline-block;vertical-align:-2px;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.live-dot{width:7px;height:7px;border-radius:999px;background:#22c55e;display:inline-block;box-shadow:0 0 0 4px rgba(34,197,94,.08);animation:lumoPulse 2s ease-in-out infinite}
+.interactive-card{cursor:pointer;position:relative;overflow:hidden}
+.interactive-card:after{content:'↗';position:absolute;right:15px;top:14px;font-size:13px;color:#aaa1cc;opacity:0;transform:translate(-4px,4px);transition:.16s ease}
+.interactive-card:hover:after{opacity:1;transform:none}
+.soft-live{display:inline-flex;align-items:center;gap:7px;padding:6px 9px;border-radius:999px;background:#f6f8fb;border:1px solid #e9ebf1;font-size:11px;color:#667085}
+@media (prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
