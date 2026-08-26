@@ -5,6 +5,8 @@ import { metaJson } from '@/lib/meta'
 export async function GET(){
   try{
     const admin=supabaseAdmin()
+    const instagramAppId=process.env.INSTAGRAM_APP_ID||''
+    const metaAppId=process.env.META_APP_ID||''
     const {data:connections,error}=await admin.from('channel_connections')
       .select('id,external_account_id,external_account_name,status,settings')
       .eq('channel','instagram')
@@ -31,17 +33,21 @@ export async function GET(){
           connection_id:connection.id,
           account:connection.external_account_name||connection.external_account_id,
           ok:true,
-          subscriptions:apps.map((app:any)=>({
-            app_id:app?.id?String(app.id):null,
-            fields:Array.isArray(app?.subscribed_fields)?app.subscribed_fields:[]
-          }))
+          subscriptions:apps.map((app:any)=>{
+            const appId=app?.id?String(app.id):null
+            return {
+              fields:Array.isArray(app?.subscribed_fields)?app.subscribed_fields:[],
+              matches_instagram_app_id:Boolean(appId&&instagramAppId&&appId===instagramAppId),
+              matches_meta_app_id:Boolean(appId&&metaAppId&&appId===metaAppId)
+            }
+          })
         })
       }catch(err:any){
         results.push({connection_id:connection.id,account:connection.external_account_name||connection.external_account_id,ok:false,error:err?.message||'subscription_check_failed'})
       }
     }
 
-    return NextResponse.json({ok:true,results})
+    return NextResponse.json({ok:true,config:{has_instagram_app_id:Boolean(instagramAppId),has_meta_app_id:Boolean(metaAppId)},results})
   }catch(err:any){
     return NextResponse.json({ok:false,error:err?.message||'diagnostic_failed'},{status:500})
   }
