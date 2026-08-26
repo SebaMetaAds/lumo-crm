@@ -81,10 +81,11 @@ export async function POST(req:NextRequest){
           const metadata={...(conversation.metadata||{}),intelligence:{...insight,updated_at:now,engine:'rules-v1'}}
           await admin.from('conversations').update({contact_id:contactId,status:'open',last_message_at:now,last_incoming_at:now,unread_count:nextUnread,metadata}).eq('id',conversation.id)
 
+          const automationPayload={channel,conversation_id:conversation.id,contact_id:contactId,message_id:message.id,body,status:'open',priority:'normal',intent:insight.intent,confidence:insight.confidence,suggested_priority:insight.suggested_priority,intent_label:insight.intent_label}
           if(isNewConversation){
-            await runAutomations(admin,{workspaceId:connection.workspace_id,triggerType:'conversation_created',payload:{channel,conversation_id:conversation.id,contact_id:contactId,message_id:message.id,body,status:'open',priority:'normal',intent:insight.intent,suggested_priority:insight.suggested_priority}})
+            await runAutomations(admin,{workspaceId:connection.workspace_id,triggerType:'conversation_created',payload:automationPayload})
           }
-          await runAutomations(admin,{workspaceId:connection.workspace_id,triggerType:'message_received',payload:{channel,conversation_id:conversation.id,contact_id:contactId,message_id:message.id,body,status:'open',priority:'normal',intent:insight.intent,suggested_priority:insight.suggested_priority}})
+          await runAutomations(admin,{workspaceId:connection.workspace_id,triggerType:'message_received',payload:automationPayload})
         }
       }
     }
