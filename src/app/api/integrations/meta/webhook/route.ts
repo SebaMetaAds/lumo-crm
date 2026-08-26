@@ -57,6 +57,19 @@ export async function POST(req:NextRequest){
       }
 
       console.info('Meta webhook connection match',JSON.stringify({channel,accountIds,matches:connections.length,eventCount:events.length}))
+      console.info('Meta webhook event diagnostics',JSON.stringify(events.map((event:any)=>({
+        keys:Object.keys(event||{}),
+        has_sender:Boolean(event?.sender),
+        sender_keys:Object.keys(event?.sender||{}),
+        has_recipient:Boolean(event?.recipient),
+        recipient_keys:Object.keys(event?.recipient||{}),
+        has_message:Boolean(event?.message),
+        message_keys:Object.keys(event?.message||{}),
+        has_from:Boolean(event?.from),
+        from_keys:Object.keys(event?.from||{}),
+        has_to:Boolean(event?.to),
+        to_keys:Object.keys(event?.to||{})
+      }))))
       if(!connections.length)continue
 
       for(const connection of connections){
