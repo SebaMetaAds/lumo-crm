@@ -132,11 +132,69 @@ async function executeAction(admin:any,workspaceId:string,type:string,config:any
     return {task_id:data.id,title:data.title}
   }
 
+  if(type==='create_opportunity'){
+    if(!conversationId)throw new Error('La automatización necesita una conversación para crear la oportunidad')
+
+    const {data:existing,error:existingError}=await admin.from('opportunities')
+      .select('id,name,stage_id')
+      .eq('workspace_id',workspaceId)
+      .eq('conversation_id',conversationId)
+      .is('closed_at',null)
+      .limit(1)
+      .maybeSingle()
+    if(existingError)throw existingError
+    if(existing)return {opportunity_id:existing.id,existing:true,name:existing.name}
+
+    const {data:firstStage,error:stageError}=await admin.from('sales_stages')
+      .select('id,name,probability')
+      .eq('workspace_id',workspaceId)
+      .eq('is_won',false)
+      .eq('is_lost',false)
+      .order('position',{ascending:true})
+      .limit(1)
+      .maybeSingle()
+    if(stageError)throw stageError
+    if(!firstStage)throw new Error('No hay una etapa inicial disponible en el Proceso de ventas')
+
+    let ownerId=config?.owner_id||null
+    const {data:conv}=await admin.from('conversations').select('assigned_user_id').eq('workspace_id',workspaceId).eq('id',conversationId).maybeSingle()
+    if(!ownerId)ownerId=conv?.assigned_user_id||null
+
+    const intentLabel=String(payload.intent_label||payload.intent||'Consulta comercial')
+    const title=String(value||`${intentLabel} · ${payload.channel||'Inbox'}`).trim()
+    const {data:opportunity,error}=await admin.from('opportunities').insert({
+      workspace_id:workspaceId,
+      name:title,
+      contact_id:contactId,
+      conversation_id:conversationId,
+      stage_id:firstStage.id,
+      owner_id:ownerId,
+      amount:null,
+      currency:String(config?.currency||'ARS'),
+      probability:firstStage.probability,
+      source_channel:payload.channel||null,
+      notes:payload.summary?String(payload.summary).slice(0,1500):null,
+    }).select('id,name,stage_id').single()
+    if(error)throw error
+
+    const {error:historyError}=await admin.from('opportunity_history').insert({
+      workspace_id:workspaceId,
+      opportunity_id:opportunity.id,
+      event_type:'created',
+      from_stage_id:null,
+      to_stage_id:firstStage.id,
+      metadata:{source:'automation',conversation_id:conversationId,intent:payload.intent||null},
+    })
+    if(historyError)console.error('Opportunity history insert error',historyError)
+    return {opportunity_id:opportunity.id,existing:false,name:opportunity.name,stage_id:firstStage.id}
+  }
+
   throw new Error(`Acción todavía no implementada: ${type}`)
 }
 
 function safePayload(payload:Record<string,any>){
   const copy={...payload}
   if('body' in copy)copy.body=String(copy.body||'').slice(0,500)
+  if('summary' in copy)copy.summary=String(copy.summary||'').slice(0,500)
   return copy
 }
