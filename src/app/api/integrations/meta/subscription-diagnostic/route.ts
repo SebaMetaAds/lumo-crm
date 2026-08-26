@@ -3,17 +3,18 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { metaJson } from '@/lib/meta'
 
 export async function GET(){
-  return inspect(true)
+  return inspect(false)
 }
 
 export async function POST(){
-  return inspect(true)
+  return inspect(false)
 }
 
 async function inspect(repair:boolean){
   try{
     const admin=supabaseAdmin()
     const instagramAppId=process.env.INSTAGRAM_APP_ID||''
+    const instagramAppSecret=process.env.INSTAGRAM_APP_SECRET||''
     const metaAppId=process.env.META_APP_ID||''
     const {data:connections,error}=await admin.from('channel_connections')
       .select('id,external_account_id,external_account_name,status,settings')
@@ -33,6 +34,27 @@ async function inspect(repair:boolean){
       }
 
       try{
+        let tokenApp:any={checked:false}
+        if(instagramAppId&&instagramAppSecret){
+          try{
+            const debugUrl=new URL('https://graph.facebook.com/debug_token')
+            debugUrl.searchParams.set('input_token',secret.access_token)
+            debugUrl.searchParams.set('access_token',`${instagramAppId}|${instagramAppSecret}`)
+            const debug=await metaJson(debugUrl.toString())
+            const data=debug?.data||{}
+            const tokenAppId=data?.app_id?String(data.app_id):null
+            tokenApp={
+              checked:true,
+              valid:Boolean(data?.is_valid),
+              matches_instagram_app_id:Boolean(tokenAppId&&instagramAppId&&tokenAppId===instagramAppId),
+              matches_meta_app_id:Boolean(tokenAppId&&metaAppId&&tokenAppId===metaAppId),
+              token_type:data?.type||null
+            }
+          }catch(err:any){
+            tokenApp={checked:true,error:'debug_token_failed'}
+          }
+        }
+
         let repair_result:any=null
         if(repair){
           const subscribe=new URL(`https://graph.instagram.com/${connection.external_account_id}/subscribed_apps`)
@@ -49,6 +71,7 @@ async function inspect(repair:boolean){
           connection_id:connection.id,
           account:connection.external_account_name||connection.external_account_id,
           ok:true,
+          token_app:tokenApp,
           repaired:repair,
           repair_success:repair?Boolean(repair_result?.success):null,
           subscriptions:apps.map((app:any)=>{
@@ -65,7 +88,7 @@ async function inspect(repair:boolean){
       }
     }
 
-    return NextResponse.json({ok:true,mode:repair?'repair':'inspect',config:{has_instagram_app_id:Boolean(instagramAppId),has_meta_app_id:Boolean(metaAppId)},results})
+    return NextResponse.json({ok:true,mode:repair?'repair':'inspect',config:{has_instagram_app_id:Boolean(instagramAppId),has_instagram_app_secret:Boolean(instagramAppSecret),has_meta_app_id:Boolean(metaAppId)},results})
   }catch(err:any){
     return NextResponse.json({ok:false,error:err?.message||'diagnostic_failed'},{status:500})
   }
