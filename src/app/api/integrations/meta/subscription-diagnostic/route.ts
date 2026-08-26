@@ -3,6 +3,14 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { metaJson } from '@/lib/meta'
 
 export async function GET(){
+  return inspect(false)
+}
+
+export async function POST(){
+  return inspect(true)
+}
+
+async function inspect(repair:boolean){
   try{
     const admin=supabaseAdmin()
     const instagramAppId=process.env.INSTAGRAM_APP_ID||''
@@ -25,6 +33,14 @@ export async function GET(){
       }
 
       try{
+        let repair_result:any=null
+        if(repair){
+          const subscribe=new URL(`https://graph.instagram.com/${connection.external_account_id}/subscribed_apps`)
+          subscribe.searchParams.set('subscribed_fields','messages,messaging_postbacks')
+          subscribe.searchParams.set('access_token',secret.access_token)
+          repair_result=await metaJson(subscribe.toString(),{method:'POST'})
+        }
+
         const url=new URL(`https://graph.instagram.com/${connection.external_account_id}/subscribed_apps`)
         url.searchParams.set('access_token',secret.access_token)
         const response=await metaJson(url.toString())
@@ -33,6 +49,8 @@ export async function GET(){
           connection_id:connection.id,
           account:connection.external_account_name||connection.external_account_id,
           ok:true,
+          repaired:repair,
+          repair_success:repair?Boolean(repair_result?.success):null,
           subscriptions:apps.map((app:any)=>{
             const appId=app?.id?String(app.id):null
             return {
@@ -43,11 +61,11 @@ export async function GET(){
           })
         })
       }catch(err:any){
-        results.push({connection_id:connection.id,account:connection.external_account_name||connection.external_account_id,ok:false,error:err?.message||'subscription_check_failed'})
+        results.push({connection_id:connection.id,account:connection.external_account_name||connection.external_account_id,ok:false,repaired:repair,error:err?.message||'subscription_check_failed'})
       }
     }
 
-    return NextResponse.json({ok:true,config:{has_instagram_app_id:Boolean(instagramAppId),has_meta_app_id:Boolean(metaAppId)},results})
+    return NextResponse.json({ok:true,mode:repair?'repair':'inspect',config:{has_instagram_app_id:Boolean(instagramAppId),has_meta_app_id:Boolean(metaAppId)},results})
   }catch(err:any){
     return NextResponse.json({ok:false,error:err?.message||'diagnostic_failed'},{status:500})
   }
