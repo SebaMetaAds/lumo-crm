@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { metaConfig, verifyMetaWebhookSignature } from '@/lib/meta'
 import { supabaseAdmin } from '@/lib/supabase-admin'
+import { runAutomations } from '@/lib/automations'
 
 export async function GET(req:NextRequest){
   const url=new URL(req.url)
@@ -59,8 +60,9 @@ export async function POST(req:NextRequest){
 
           const {data:existingConv}=await admin.from('conversations').select('id,unread_count').eq('channel_connection_id',connection.id).eq('external_conversation_id',externalUserId).limit(1).maybeSingle()
           let conversation=existingConv
+          const isNewConversation=!conversation
           if(!conversation){
-            const {data:newConv,error:cve}=await admin.from('conversations').insert({workspace_id:connection.workspace_id,channel_connection_id:connection.id,contact_id:contactId,external_conversation_id:externalUserId,status:'open',priority:'normal',last_message_at:now,last_incoming_at:now,unread_count:1,metadata:{mode:'live',provider:'meta'}}).select('id,unread_count').single()
+            const {data:newConv,error:cve}=await admin.from('conversations').insert({workspace_id:connection.workspace_id,channel_connection_id:connection.id,contact_id:contactId,external_conversation_id:externalUserId,status:'open',priority:'normal',last_message_at:now,last_incoming_at:now,unread_count:0,metadata:{mode:'live',provider:'meta'}}).select('id,unread_count').single()
             if(cve)throw cve
             conversation=newConv
           }
@@ -69,9 +71,15 @@ export async function POST(req:NextRequest){
             const {data:dup}=await admin.from('messages').select('id').eq('conversation_id',conversation.id).eq('external_message_id',externalMessageId).limit(1)
             if(dup?.length)continue
           }
-          const {error:me}=await admin.from('messages').insert({workspace_id:connection.workspace_id,conversation_id:conversation.id,external_message_id:externalMessageId,direction:'incoming',sender_type:'contact',body,message_type:event.message.attachments?.length?'attachment':'text',status:'received',attachments:event.message.attachments||[],metadata:{mode:'live',provider:'meta'},sent_at:now})
+          const {data:message,error:me}=await admin.from('messages').insert({workspace_id:connection.workspace_id,conversation_id:conversation.id,external_message_id:externalMessageId,direction:'incoming',sender_type:'contact',body,message_type:event.message.attachments?.length?'attachment':'text',status:'received',attachments:event.message.attachments||[],metadata:{mode:'live',provider:'meta'},sent_at:now}).select('id').single()
           if(me)throw me
-          await admin.from('conversations').update({contact_id:contactId,status:'open',last_message_at:now,last_incoming_at:now,unread_count:Number(conversation.unread_count||0)+1}).eq('id',conversation.id)
+          const nextUnread=Number(conversation.unread_count||0)+1
+          await admin.from('conversations').update({contact_id:contactId,status:'open',last_message_at:now,last_incoming_at:now,unread_count:nextUnread}).eq('id',conversation.id)
+
+          if(isNewConversation){
+            await runAutomations(admin,{workspaceId:connection.workspace_id,triggerType:'conversation_created',payload:{channel,conversation_id:conversation.id,contact_id:contactId,message_id:message.id,body,status:'open',priority:'normal'}})
+          }
+          await runAutomations(admin,{workspaceId:connection.workspace_id,triggerType:'message_received',payload:{channel,conversation_id:conversation.id,contact_id:contactId,message_id:message.id,body,status:'open',priority:'normal'}})
         }
       }
     }
