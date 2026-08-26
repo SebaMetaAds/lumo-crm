@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { metaJson } from '@/lib/meta'
 
 const EXPECTED_META_APP_ID='2161366078595716'
+const DIAGNOSTIC_VERSION='2026-08-26-env-refresh'
 
 export async function GET(){
   return inspect(false)
@@ -94,6 +95,7 @@ async function inspect(repair:boolean){
 
     return NextResponse.json({
       ok:true,
+      diagnostic_version:DIAGNOSTIC_VERSION,
       mode:repair?'repair':'inspect',
       config:{
         has_instagram_app_id:Boolean(instagramAppId),
