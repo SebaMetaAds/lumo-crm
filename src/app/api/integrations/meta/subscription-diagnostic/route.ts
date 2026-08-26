@@ -3,7 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { metaJson } from '@/lib/meta'
 
 export async function GET(){
-  return inspect(false)
+  return inspect(true)
 }
 
 export async function POST(){
