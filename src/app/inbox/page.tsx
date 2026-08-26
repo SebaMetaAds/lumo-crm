@@ -1,3 +1,3 @@
-import InboxV5 from '@/components/InboxV5'
+import InboxV6 from '@/components/InboxV6'
 
-export default InboxV5
+export default InboxV6
