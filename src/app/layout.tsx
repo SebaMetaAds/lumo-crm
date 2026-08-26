@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import './ui-refresh.css'
+import './ui-interactions.css'
 
 export const metadata: Metadata = {
   title: 'Lumo CRM',
