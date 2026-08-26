@@ -82,7 +82,7 @@ export default function PrivacyPage(){
     </Section>
 
     <Section title="11. Contacto">
-      <p>Para consultas sobre privacidad, solicitudes de acceso o eliminación de datos, podés contactarnos por correo electrónico en <a href="mailto:privacidad@lumo-crm.com" style={{color:'#684cc9'}}>privacidad@lumo-crm.com</a>.</p>
+      <p>Para consultas sobre privacidad, solicitudes de acceso o eliminación de datos, podés contactarnos por correo electrónico en <a href="mailto:parraseba96@gmail.com" style={{color:'#684cc9'}}>parraseba96@gmail.com</a>.</p>
     </Section>
 
     <div style={{marginTop:44,paddingTop:22,borderTop:'1px solid #e5e7eb',fontSize:13,color:'#6b7280'}}>Lumo CRM · Política de Privacidad</div>
