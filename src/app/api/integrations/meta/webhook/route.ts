@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { metaConfig, verifyMetaWebhookSignature } from '@/lib/meta'
+import { metaConfig, metaJson, verifyMetaWebhookSignature } from '@/lib/meta'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { runAutomations } from '@/lib/automations'
 import { analyzeConversation } from '@/lib/inbox-intelligence'
@@ -66,19 +66,14 @@ export async function POST(req:NextRequest){
         has_message:Boolean(event?.message),
         message_keys:Object.keys(event?.message||{}),
         has_message_edit:Boolean(event?.message_edit),
-        message_edit_keys:Object.keys(event?.message_edit||{}),
-        message_edit_message_keys:Object.keys(event?.message_edit?.message||{}),
-        message_edit_sender_keys:Object.keys(event?.message_edit?.sender||{}),
-        message_edit_recipient_keys:Object.keys(event?.message_edit?.recipient||{}),
-        has_from:Boolean(event?.from),
-        from_keys:Object.keys(event?.from||{}),
-        has_to:Boolean(event?.to),
-        to_keys:Object.keys(event?.to||{})
+        message_edit_keys:Object.keys(event?.message_edit||{})
       }))))
       if(!connections.length)continue
 
       for(const connection of connections){
-        for(const event of events){
+        for(const rawEvent of events){
+          const event=await resolveIncomingEvent(admin,connection,rawEvent,channel)
+          if(!event)continue
           if(event?.recipient?.id&&String(event.recipient.id)!==String(connection.external_account_id))continue
           if(!event?.sender?.id||!event?.message)continue
           if(event.message.is_echo)continue
@@ -118,7 +113,7 @@ export async function POST(req:NextRequest){
             if(dup?.length)continue
           }
 
-          const {data:message,error:me}=await admin.from('messages').insert({workspace_id:connection.workspace_id,conversation_id:conversation.id,external_message_id:externalMessageId,direction:'incoming',sender_type:'contact',body,message_type:event.message.attachments?.length?'attachment':'text',status:'received',attachments:event.message.attachments||[],metadata:{mode:'live',provider:'meta'},sent_at:now}).select('id').single()
+          const {data:message,error:me}=await admin.from('messages').insert({workspace_id:connection.workspace_id,conversation_id:conversation.id,external_message_id:externalMessageId,direction:'incoming',sender_type:'contact',body,message_type:event.message.attachments?.length?'attachment':'text',status:'received',attachments:event.message.attachments||[],metadata:{mode:'live',provider:'meta',resolved_from_message_edit:Boolean(rawEvent?.message_edit)},sent_at:now}).select('id').single()
           if(me)throw me
           const nextUnread=Number(conversation.unread_count||0)+1
 
@@ -134,7 +129,7 @@ export async function POST(req:NextRequest){
             await runAutomations(admin,{workspaceId:connection.workspace_id,triggerType:'conversation_created',payload:automationPayload})
           }
           await runAutomations(admin,{workspaceId:connection.workspace_id,triggerType:'message_received',payload:automationPayload})
-          console.info('Meta webhook message ingested',JSON.stringify({channel,connectionId:connection.id,conversationId:conversation.id,externalMessageId:externalMessageId||null}))
+          console.info('Meta webhook message ingested',JSON.stringify({channel,connectionId:connection.id,conversationId:conversation.id,externalMessageId:externalMessageId||null,resolvedFromEdit:Boolean(rawEvent?.message_edit)}))
         }
       }
     }
@@ -142,6 +137,40 @@ export async function POST(req:NextRequest){
   }catch(err:any){
     console.error('Meta webhook error',err)
     return NextResponse.json({error:'Webhook processing failed'},{status:500})
+  }
+}
+
+async function resolveIncomingEvent(admin:any,connection:any,event:any,channel:string){
+  if(event?.sender?.id&&event?.message)return event
+  if(channel!=='instagram'||!event?.message_edit?.mid)return null
+
+  try{
+    const {data:secretRows,error}=await admin.rpc('get_channel_connection_secret',{p_connection_id:connection.id})
+    const secret=secretRows?.[0]
+    if(error||!secret?.access_token)throw new Error('missing_connection_token')
+
+    const mid=String(event.message_edit.mid)
+    const url=new URL(`https://graph.instagram.com/${encodeURIComponent(mid)}`)
+    url.searchParams.set('fields','id,message,from,to,created_time')
+    const detail=await metaJson(url.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
+    const senderId=detail?.from?.id?String(detail.from.id):''
+    const recipientId=String(connection.external_account_id||'')
+    const text=typeof detail?.message==='string'?detail.message:''
+    if(!senderId||!recipientId||!text){
+      console.info('Meta message_edit lookup incomplete',JSON.stringify({hasFrom:Boolean(detail?.from?.id),hasMessage:Boolean(text),hasCreatedTime:Boolean(detail?.created_time)}))
+      return null
+    }
+    const timestamp=detail?.created_time?Date.parse(String(detail.created_time)):Number(event?.timestamp||Date.now())
+    console.info('Meta message_edit resolved',JSON.stringify({hasSender:true,hasRecipient:true,hasMessage:true}))
+    return {
+      timestamp:Number.isFinite(timestamp)?timestamp:Date.now(),
+      sender:{id:senderId},
+      recipient:{id:recipientId},
+      message:{mid:String(detail?.id||mid),text}
+    }
+  }catch(err:any){
+    console.error('Meta message_edit lookup failed',JSON.stringify({error:err?.message||'lookup_failed'}))
+    return null
   }
 }
 
