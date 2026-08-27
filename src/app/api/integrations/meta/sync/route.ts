@@ -32,16 +32,22 @@ export async function POST(req:NextRequest){
       const secret=secretRows?.[0]
       if(se||!secret?.access_token)continue
 
-      const igId=String(connection.external_account_id)
+      const storedIgId=String(connection.external_account_id)
+      let tokenIgId:string|null=null
+      let tokenUserId:string|null=null
 
       try{
         const identityUrl=new URL(`https://graph.instagram.com/${version}/me`)
-        identityUrl.searchParams.set('fields','id,username,account_type')
+        identityUrl.searchParams.set('fields','id,user_id,username,account_type')
         const identity=await metaJson(identityUrl.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
+        tokenIgId=identity?.id?String(identity.id):null
+        tokenUserId=identity?.user_id?String(identity.user_id):null
         console.info('Instagram token identity diagnostic',JSON.stringify({
-          storedAccountId:igId,
-          returnedId:identity?.id?String(identity.id):null,
-          idMatches:identity?.id?String(identity.id)===igId:false,
+          storedAccountId:storedIgId,
+          returnedId:tokenIgId,
+          returnedUserId:tokenUserId,
+          storedMatchesId:tokenIgId===storedIgId,
+          storedMatchesUserId:tokenUserId===storedIgId,
           storedAccountName:connection.external_account_name||null,
           returnedUsername:identity?.username||null,
           accountType:identity?.account_type||null,
@@ -54,16 +60,24 @@ export async function POST(req:NextRequest){
         console.info('Instagram token identity diagnostic failed',JSON.stringify({error:identityErr?.message||'identity_failed'}))
       }
 
+      const candidateIds=[...new Set([storedIgId,tokenIgId,tokenUserId].filter(Boolean) as string[])]
       let list:any=null
-      let listMode='ig_user_id'
+      let listMode='none'
+      let activeIgId=storedIgId
+      let remoteConversations:any[]=[]
 
-      const listUrl=new URL(`https://graph.instagram.com/${version}/${igId}/conversations`)
-      listUrl.searchParams.set('platform','instagram')
-      listUrl.searchParams.set('fields','id,updated_time')
-      listUrl.searchParams.set('limit','25')
-      list=await metaJson(listUrl.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
+      for(const candidateId of candidateIds){
+        const candidateUrl=new URL(`https://graph.instagram.com/${version}/${candidateId}/conversations`)
+        candidateUrl.searchParams.set('platform','instagram')
+        candidateUrl.searchParams.set('fields','id,updated_time')
+        candidateUrl.searchParams.set('limit','25')
+        const candidateList=await metaJson(candidateUrl.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
+        const rows=Array.isArray(candidateList?.data)?candidateList.data:[]
+        console.info('Instagram sync candidate diagnostic',JSON.stringify({candidateId,conversationCount:rows.length,hasData:Array.isArray(candidateList?.data),hasError:Boolean(candidateList?.error),errorCode:candidateList?.error?.code||null,errorType:candidateList?.error?.type||null}))
+        if(!list){list=candidateList;listMode=`id:${candidateId}`}
+        if(rows.length){list=candidateList;remoteConversations=rows;listMode=`id:${candidateId}`;activeIgId=candidateId;break}
+      }
 
-      let remoteConversations=Array.isArray(list?.data)?list.data:[]
       if(!remoteConversations.length){
         const meUrl=new URL(`https://graph.instagram.com/${version}/me/conversations`)
         meUrl.searchParams.set('platform','instagram')
@@ -72,16 +86,13 @@ export async function POST(req:NextRequest){
         const meList=await metaJson(meUrl.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
         const meRows=Array.isArray(meList?.data)?meList.data:[]
         console.info('Instagram sync me-list diagnostic',JSON.stringify({hasData:Array.isArray(meList?.data),conversationCount:meRows.length,keys:Object.keys(meList||{}),hasError:Boolean(meList?.error),errorCode:meList?.error?.code||null,errorType:meList?.error?.type||null}))
-        if(meRows.length || !Array.isArray(list?.data)){
-          list=meList
-          remoteConversations=meRows
-          listMode='me'
-        }
+        if(meRows.length){list=meList;remoteConversations=meRows;listMode='me';activeIgId=tokenIgId||tokenUserId||storedIgId}
       }
 
       console.info('Instagram sync list diagnostic',JSON.stringify({
-        account:connection.external_account_name||igId,
+        account:connection.external_account_name||storedIgId,
         listMode,
+        activeIgId,
         platform:'instagram',
         hasData:Array.isArray(list?.data),
         conversationCount:remoteConversations.length,
@@ -92,6 +103,7 @@ export async function POST(req:NextRequest){
         errorType:list?.error?.type||null
       }))
 
+      const selfIds=new Set(candidateIds)
       for(const remoteConversation of remoteConversations){
         if(!remoteConversation?.id)continue
         conversationsSeen++
@@ -102,8 +114,8 @@ export async function POST(req:NextRequest){
         console.info('Instagram sync conversation diagnostic',JSON.stringify({hasMessages:Array.isArray(detail?.messages?.data),messageCount:remoteMessages.length,keys:Object.keys(detail||{})}))
         if(!remoteMessages.length)continue
 
-        const participantMessage=remoteMessages.find((m:any)=>String(m?.from?.id||'')&&String(m.from.id)!==igId) || remoteMessages.find((m:any)=>Array.isArray(m?.to?.data)&&m.to.data.some((x:any)=>String(x?.id||'')!==igId))
-        const participantId=String(participantMessage?.from?.id&&String(participantMessage.from.id)!==igId?participantMessage.from.id:(participantMessage?.to?.data||[]).find((x:any)=>String(x?.id||'')!==igId)?.id||'')
+        const participantMessage=remoteMessages.find((m:any)=>String(m?.from?.id||'')&&!selfIds.has(String(m.from.id))) || remoteMessages.find((m:any)=>Array.isArray(m?.to?.data)&&m.to.data.some((x:any)=>!selfIds.has(String(x?.id||''))))
+        const participantId=String(participantMessage?.from?.id&&!selfIds.has(String(participantMessage.from.id))?participantMessage.from.id:(participantMessage?.to?.data||[]).find((x:any)=>!selfIds.has(String(x?.id||'')))?.id||'')
         if(!participantId)continue
 
         const latestTs=remoteMessages.map((m:any)=>Date.parse(String(m?.created_time||''))).filter((x:number)=>Number.isFinite(x)).sort((a:number,b:number)=>b-a)[0]||Date.now()
@@ -126,7 +138,7 @@ export async function POST(req:NextRequest){
         if(ee)throw ee
         let local=existing
         if(!local){
-          const {data:created,error:cve}=await admin.from('conversations').insert({workspace_id:workspaceId,channel_connection_id:connection.id,contact_id:contactId,external_conversation_id:participantId,status:'open',priority:'normal',last_message_at:latestIso,last_incoming_at:latestIso,unread_count:0,metadata:{mode:'live',provider:'meta',synced_via:'conversations_api',meta_conversation_id:String(remoteConversation.id)}}).select('id,unread_count,metadata').single()
+          const {data:created,error:cve}=await admin.from('conversations').insert({workspace_id:workspaceId,channel_connection_id:connection.id,contact_id:contactId,external_conversation_id:participantId,status:'open',priority:'normal',last_message_at:latestIso,last_incoming_at:latestIso,unread_count:0,metadata:{mode:'live',provider:'meta',synced_via:'conversations_api',meta_conversation_id:String(remoteConversation.id),instagram_api_account_id:activeIgId}}).select('id,unread_count,metadata').single()
           if(cve)throw cve
           local=created
         }
@@ -142,7 +154,7 @@ export async function POST(req:NextRequest){
           if(dup?.length)continue
 
           const fromId=String(rm?.from?.id||'')
-          const incoming=fromId!==igId
+          const incoming=!selfIds.has(fromId)
           const sentAt=rm?.created_time?new Date(String(rm.created_time)).toISOString():new Date().toISOString()
           const {error:mie}=await admin.from('messages').insert({workspace_id:workspaceId,conversation_id:local.id,external_message_id:externalId,direction:incoming?'incoming':'outgoing',sender_type:incoming?'contact':'user',body:text,message_type:'text',status:incoming?'received':'sent',attachments:[],metadata:{mode:'live',provider:'meta',synced_via:'conversations_api'},sent_at:sentAt})
           if(mie)throw mie
@@ -153,7 +165,7 @@ export async function POST(req:NextRequest){
         const {data:recent,error:re}=await admin.from('messages').select('direction,body,sent_at').eq('conversation_id',local.id).order('sent_at',{ascending:true}).limit(100)
         if(re)throw re
         const insight=analyzeConversation(recent||[])
-        const metadata={...(local.metadata||{}),meta_conversation_id:String(remoteConversation.id),synced_via:'conversations_api',intelligence:{...insight,updated_at:new Date().toISOString(),engine:'rules-v1'}}
+        const metadata={...(local.metadata||{}),meta_conversation_id:String(remoteConversation.id),instagram_api_account_id:activeIgId,synced_via:'conversations_api',intelligence:{...insight,updated_at:new Date().toISOString(),engine:'rules-v1'}}
         const incomingDates=(recent||[]).filter((m:any)=>m.direction==='incoming').map((m:any)=>m.sent_at).filter(Boolean)
         const lastIncoming=incomingDates.length?incomingDates[incomingDates.length-1]:null
         const {error:uce}=await admin.from('conversations').update({contact_id:contactId,status:'open',last_message_at:latestIso,last_incoming_at:lastIncoming,unread_count:Number(local.unread_count||0)+importedIncoming,metadata}).eq('id',local.id).eq('workspace_id',workspaceId)
