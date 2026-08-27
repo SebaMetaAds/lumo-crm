@@ -39,6 +39,17 @@ export async function POST(req:NextRequest){
       const list=await metaJson(listUrl.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
       const remoteConversations=Array.isArray(list?.data)?list.data:[]
 
+      console.info('Instagram sync list diagnostic',JSON.stringify({
+        account:connection.external_account_name||igId,
+        hasData:Array.isArray(list?.data),
+        conversationCount:remoteConversations.length,
+        topLevelKeys:Object.keys(list||{}),
+        hasPaging:Boolean(list?.paging),
+        hasError:Boolean(list?.error),
+        errorCode:list?.error?.code||null,
+        errorType:list?.error?.type||null
+      }))
+
       for(const remoteConversation of remoteConversations){
         if(!remoteConversation?.id)continue
         conversationsSeen++
@@ -46,6 +57,11 @@ export async function POST(req:NextRequest){
         conversationUrl.searchParams.set('fields','messages.limit(20){id,created_time,from,to,message,is_unsupported}')
         const detail=await metaJson(conversationUrl.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
         const remoteMessages=Array.isArray(detail?.messages?.data)?detail.messages.data:[]
+        console.info('Instagram sync conversation diagnostic',JSON.stringify({
+          hasMessages:Array.isArray(detail?.messages?.data),
+          messageCount:remoteMessages.length,
+          keys:Object.keys(detail||{})
+        }))
         if(!remoteMessages.length)continue
 
         const participantMessage=remoteMessages.find((m:any)=>String(m?.from?.id||'')&&String(m.from.id)!==igId) || remoteMessages.find((m:any)=>Array.isArray(m?.to?.data)&&m.to.data.some((x:any)=>String(x?.id||'')!==igId))
@@ -107,6 +123,7 @@ export async function POST(req:NextRequest){
       }
     }
 
+    console.info('Instagram sync complete',JSON.stringify({connections:(connections||[]).length,conversationsSeen,messagesImported}))
     return NextResponse.json({ok:true,connections:(connections||[]).length,conversations_seen:conversationsSeen,messages_imported:messagesImported})
   }catch(err:any){
     console.error('Instagram sync error',err)
