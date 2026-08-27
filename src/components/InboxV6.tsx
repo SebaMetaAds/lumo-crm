@@ -3,6 +3,7 @@ import {useEffect,useState} from 'react'
 import {BriefcaseBusiness,ChevronLeft,ChevronRight,Command,PanelRightClose,PanelRightOpen,Maximize2,Minimize2,X} from 'lucide-react'
 import InboxV4 from '@/components/InboxV4'
 import InboxOpportunityBar from '@/components/InboxOpportunityBar'
+import {supabase} from '@/lib/supabase'
 import '@/app/inbox-v6.css'
 
 export default function InboxV6(){
@@ -16,6 +17,20 @@ export default function InboxV6(){
   document.body.classList.toggle('inbox-hide-info',!showInfo)
   return()=>{document.body.classList.remove('inbox-focus-mode','inbox-hide-info')}
  },[focus,showInfo])
+
+ useEffect(()=>{
+  let cancelled=false
+  async function syncInstagram(){
+   try{
+    const {data:{session}}=await supabase.auth.getSession()
+    if(cancelled||!session?.access_token)return
+    await fetch('/api/integrations/meta/sync',{method:'POST',headers:{Authorization:`Bearer ${session.access_token}`}})
+   }catch{}
+  }
+  syncInstagram()
+  const timer=window.setInterval(syncInstagram,15000)
+  return()=>{cancelled=true;window.clearInterval(timer)}
+ },[])
 
  useEffect(()=>{
   function navigate(delta:number){
