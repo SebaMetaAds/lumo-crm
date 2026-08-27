@@ -33,14 +33,34 @@ export async function POST(req:NextRequest){
       if(se||!secret?.access_token)continue
 
       const igId=String(connection.external_account_id)
+      let list:any=null
+      let listMode='ig_user_id'
+
       const listUrl=new URL(`https://graph.instagram.com/${version}/${igId}/conversations`)
+      listUrl.searchParams.set('platform','instagram')
       listUrl.searchParams.set('fields','id,updated_time')
       listUrl.searchParams.set('limit','25')
-      const list=await metaJson(listUrl.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
-      const remoteConversations=Array.isArray(list?.data)?list.data:[]
+      list=await metaJson(listUrl.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
+
+      let remoteConversations=Array.isArray(list?.data)?list.data:[]
+      if(!remoteConversations.length){
+        const meUrl=new URL(`https://graph.instagram.com/${version}/me/conversations`)
+        meUrl.searchParams.set('platform','instagram')
+        meUrl.searchParams.set('fields','id,updated_time')
+        meUrl.searchParams.set('limit','25')
+        const meList=await metaJson(meUrl.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
+        const meRows=Array.isArray(meList?.data)?meList.data:[]
+        if(meRows.length || !Array.isArray(list?.data)){
+          list=meList
+          remoteConversations=meRows
+          listMode='me'
+        }
+      }
 
       console.info('Instagram sync list diagnostic',JSON.stringify({
         account:connection.external_account_name||igId,
+        listMode,
+        platform:'instagram',
         hasData:Array.isArray(list?.data),
         conversationCount:remoteConversations.length,
         topLevelKeys:Object.keys(list||{}),
@@ -57,11 +77,7 @@ export async function POST(req:NextRequest){
         conversationUrl.searchParams.set('fields','messages.limit(20){id,created_time,from,to,message,is_unsupported}')
         const detail=await metaJson(conversationUrl.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
         const remoteMessages=Array.isArray(detail?.messages?.data)?detail.messages.data:[]
-        console.info('Instagram sync conversation diagnostic',JSON.stringify({
-          hasMessages:Array.isArray(detail?.messages?.data),
-          messageCount:remoteMessages.length,
-          keys:Object.keys(detail||{})
-        }))
+        console.info('Instagram sync conversation diagnostic',JSON.stringify({hasMessages:Array.isArray(detail?.messages?.data),messageCount:remoteMessages.length,keys:Object.keys(detail||{})}))
         if(!remoteMessages.length)continue
 
         const participantMessage=remoteMessages.find((m:any)=>String(m?.from?.id||'')&&String(m.from.id)!==igId) || remoteMessages.find((m:any)=>Array.isArray(m?.to?.data)&&m.to.data.some((x:any)=>String(x?.id||'')!==igId))
