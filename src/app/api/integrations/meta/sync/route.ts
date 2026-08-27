@@ -33,6 +33,27 @@ export async function POST(req:NextRequest){
       if(se||!secret?.access_token)continue
 
       const igId=String(connection.external_account_id)
+
+      try{
+        const identityUrl=new URL(`https://graph.instagram.com/${version}/me`)
+        identityUrl.searchParams.set('fields','id,username,account_type')
+        const identity=await metaJson(identityUrl.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
+        console.info('Instagram token identity diagnostic',JSON.stringify({
+          storedAccountId:igId,
+          returnedId:identity?.id?String(identity.id):null,
+          idMatches:identity?.id?String(identity.id)===igId:false,
+          storedAccountName:connection.external_account_name||null,
+          returnedUsername:identity?.username||null,
+          accountType:identity?.account_type||null,
+          keys:Object.keys(identity||{}),
+          hasError:Boolean(identity?.error),
+          errorCode:identity?.error?.code||null,
+          errorType:identity?.error?.type||null
+        }))
+      }catch(identityErr:any){
+        console.info('Instagram token identity diagnostic failed',JSON.stringify({error:identityErr?.message||'identity_failed'}))
+      }
+
       let list:any=null
       let listMode='ig_user_id'
 
@@ -50,6 +71,7 @@ export async function POST(req:NextRequest){
         meUrl.searchParams.set('limit','25')
         const meList=await metaJson(meUrl.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
         const meRows=Array.isArray(meList?.data)?meList.data:[]
+        console.info('Instagram sync me-list diagnostic',JSON.stringify({hasData:Array.isArray(meList?.data),conversationCount:meRows.length,keys:Object.keys(meList||{}),hasError:Boolean(meList?.error),errorCode:meList?.error?.code||null,errorType:meList?.error?.type||null}))
         if(meRows.length || !Array.isArray(list?.data)){
           list=meList
           remoteConversations=meRows
