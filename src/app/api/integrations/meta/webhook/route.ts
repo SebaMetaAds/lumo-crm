@@ -4,6 +4,8 @@ import { supabaseAdmin } from '@/lib/supabase-admin'
 import { runAutomations } from '@/lib/automations'
 import { analyzeConversation } from '@/lib/inbox-intelligence'
 
+const igGraphVersion=()=>process.env.META_GRAPH_VERSION||'v26.0'
+
 export async function GET(req:NextRequest){
   const url=new URL(req.url)
   const mode=(url.searchParams.get('hub.mode')||'').trim()
@@ -79,6 +81,7 @@ export async function POST(req:NextRequest){
           if(event.message.is_echo)continue
 
           const externalUserId=String(event.sender.id)
+          if(externalUserId===String(connection.external_account_id))continue
           const externalMessageId=event.message.mid?String(event.message.mid):null
           const body=event.message.text||attachmentSummary(event.message.attachments)||null
           const now=event.timestamp?new Date(Number(event.timestamp)).toISOString():new Date().toISOString()
@@ -150,18 +153,23 @@ async function resolveIncomingEvent(admin:any,connection:any,event:any,channel:s
     if(error||!secret?.access_token)throw new Error('missing_connection_token')
 
     const mid=String(event.message_edit.mid)
-    const url=new URL(`https://graph.instagram.com/${encodeURIComponent(mid)}`)
-    url.searchParams.set('fields','id,message,from,to,created_time')
-    const detail=await metaJson(url.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
+    const version=igGraphVersion()
+    const direct=await getInstagramMessageDetail(mid,secret.access_token,version)
+    let detail=direct
+
+    if(!hasUsableMessage(detail)){
+      detail=await findMessageInRecentConversations(String(connection.external_account_id||''),mid,secret.access_token,version)
+    }
+
     const senderId=detail?.from?.id?String(detail.from.id):''
-    const recipientId=String(connection.external_account_id||'')
-    const text=typeof detail?.message==='string'?detail.message:''
+    const recipientId=detail?.to?.data?.[0]?.id?String(detail.to.data[0].id):String(connection.external_account_id||'')
+    const text=typeof detail?.message==='string'?detail.message:(typeof event?.message_edit?.text==='string'?event.message_edit.text:'')
     if(!senderId||!recipientId||!text){
-      console.info('Meta message_edit lookup incomplete',JSON.stringify({hasFrom:Boolean(detail?.from?.id),hasMessage:Boolean(text),hasCreatedTime:Boolean(detail?.created_time)}))
+      console.info('Meta message_edit lookup incomplete',JSON.stringify({keys:Object.keys(detail||{}),hasFrom:Boolean(detail?.from?.id),hasTo:Boolean(detail?.to),hasMessage:Boolean(text),hasCreatedTime:Boolean(detail?.created_time)}))
       return null
     }
     const timestamp=detail?.created_time?Date.parse(String(detail.created_time)):Number(event?.timestamp||Date.now())
-    console.info('Meta message_edit resolved',JSON.stringify({hasSender:true,hasRecipient:true,hasMessage:true}))
+    console.info('Meta message_edit resolved',JSON.stringify({hasSender:true,hasRecipient:true,hasMessage:true,usedFallback:Boolean(detail?._resolved_via_conversation)}))
     return {
       timestamp:Number.isFinite(timestamp)?timestamp:Date.now(),
       sender:{id:senderId},
@@ -172,6 +180,39 @@ async function resolveIncomingEvent(admin:any,connection:any,event:any,channel:s
     console.error('Meta message_edit lookup failed',JSON.stringify({error:err?.message||'lookup_failed'}))
     return null
   }
+}
+
+async function getInstagramMessageDetail(mid:string,accessToken:string,version:string){
+  const url=new URL(`https://graph.instagram.com/${version}/${encodeURIComponent(mid)}`)
+  url.searchParams.set('fields','id,created_time,from,to,message')
+  return await metaJson(url.toString(),{headers:{Authorization:`Bearer ${accessToken}`}})
+}
+
+function hasUsableMessage(detail:any){
+  return Boolean(detail?.from?.id&&typeof detail?.message==='string'&&detail.message)
+}
+
+async function findMessageInRecentConversations(igUserId:string,mid:string,accessToken:string,version:string){
+  if(!igUserId)return null
+  const conversationsUrl=new URL(`https://graph.instagram.com/${version}/${encodeURIComponent(igUserId)}/conversations`)
+  conversationsUrl.searchParams.set('platform','instagram')
+  conversationsUrl.searchParams.set('limit','25')
+  const conversations=await metaJson(conversationsUrl.toString(),{headers:{Authorization:`Bearer ${accessToken}`}})
+  const rows=Array.isArray(conversations?.data)?conversations.data:[]
+
+  for(const row of rows.slice(0,25)){
+    const conversationId=row?.id?String(row.id):''
+    if(!conversationId)continue
+    try{
+      const messagesUrl=new URL(`https://graph.instagram.com/${version}/${encodeURIComponent(conversationId)}`)
+      messagesUrl.searchParams.set('fields','messages.limit(20){id,created_time,from,to,message}')
+      const response=await metaJson(messagesUrl.toString(),{headers:{Authorization:`Bearer ${accessToken}`}})
+      const messages=Array.isArray(response?.messages?.data)?response.messages.data:[]
+      const match=messages.find((m:any)=>String(m?.id||'')===mid)
+      if(match)return {...match,_resolved_via_conversation:true}
+    }catch{}
+  }
+  return null
 }
 
 function collectEvents(entry:any){
