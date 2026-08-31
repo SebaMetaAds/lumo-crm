@@ -1,17 +1,18 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase-admin'
 import { metaJson } from '@/lib/meta'
 
 const EXPECTED_META_APP_ID='2161366078595716'
 const EXPECTED_INSTAGRAM_APP_ID='1653491322968356'
-const DIAGNOSTIC_VERSION='2026-08-26-instagram-secret-refresh'
+const DIAGNOSTIC_VERSION='2026-08-31-subscription-repair'
 
-export async function GET(){
-  return inspect(false)
+export async function GET(req:NextRequest){
+  const url=new URL(req.url)
+  return inspect(url.searchParams.get('repair')==='1')
 }
 
 export async function POST(){
-  return inspect(false)
+  return inspect(true)
 }
 
 async function inspect(repair:boolean){
@@ -55,17 +56,17 @@ async function inspect(repair:boolean){
               matches_expected_instagram_app_id:Boolean(tokenAppId&&tokenAppId===EXPECTED_INSTAGRAM_APP_ID),
               token_type:data?.type||null
             }
-          }catch(err:any){
+          }catch{
             tokenApp={checked:true,error:'debug_token_failed'}
           }
         }
 
-        let repair_result:any=null
+        let repairResult:any=null
         if(repair){
           const subscribe=new URL(`https://graph.instagram.com/${connection.external_account_id}/subscribed_apps`)
           subscribe.searchParams.set('subscribed_fields','messages,messaging_postbacks')
           subscribe.searchParams.set('access_token',secret.access_token)
-          repair_result=await metaJson(subscribe.toString(),{method:'POST'})
+          repairResult=await metaJson(subscribe.toString(),{method:'POST'})
         }
 
         const url=new URL(`https://graph.instagram.com/${connection.external_account_id}/subscribed_apps`)
@@ -78,7 +79,7 @@ async function inspect(repair:boolean){
           ok:true,
           token_app:tokenApp,
           repaired:repair,
-          repair_success:repair?Boolean(repair_result?.success):null,
+          repair_success:repair?Boolean(repairResult?.success):null,
           subscriptions:apps.map((app:any)=>{
             const appId=app?.id?String(app.id):null
             return {
