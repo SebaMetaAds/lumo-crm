@@ -154,22 +154,30 @@ async function resolveIncomingEvent(admin:any,connection:any,event:any,channel:s
 
     const mid=String(event.message_edit.mid)
     const version=igGraphVersion()
-    const direct=await getInstagramMessageDetail(mid,secret.access_token,version)
-    let detail=direct
+    let detail:any=null
+    let resolution='none'
+
+    for(let attempt=1;attempt<=4&&!hasUsableMessage(detail);attempt++){
+      if(attempt>1)await sleep(900*attempt)
+      detail=await tryMessageDetailAcrossHosts(mid,secret.access_token,version)
+      if(hasUsableMessage(detail)){resolution=`direct-retry-${attempt}`;break}
+    }
 
     if(!hasUsableMessage(detail)){
-      detail=await findMessageInRecentConversations(String(connection.external_account_id||''),mid,secret.access_token,version)
+      const candidateIds=await getInstagramIdentityCandidates(String(connection.external_account_id||''),secret.access_token,version)
+      detail=await findMessageInRecentConversations(candidateIds,mid,secret.access_token,version)
+      if(hasUsableMessage(detail))resolution='conversation-fallback'
     }
 
     const senderId=detail?.from?.id?String(detail.from.id):''
     const recipientId=detail?.to?.data?.[0]?.id?String(detail.to.data[0].id):String(connection.external_account_id||'')
     const text=typeof detail?.message==='string'?detail.message:(typeof event?.message_edit?.text==='string'?event.message_edit.text:'')
     if(!senderId||!recipientId||!text){
-      console.info('Meta message_edit lookup incomplete',JSON.stringify({keys:Object.keys(detail||{}),hasFrom:Boolean(detail?.from?.id),hasTo:Boolean(detail?.to),hasMessage:Boolean(text),hasCreatedTime:Boolean(detail?.created_time)}))
+      console.info('Meta message_edit lookup incomplete',JSON.stringify({keys:Object.keys(detail||{}),hasFrom:Boolean(detail?.from?.id),hasTo:Boolean(detail?.to),hasMessage:Boolean(text),hasCreatedTime:Boolean(detail?.created_time),resolution}))
       return null
     }
     const timestamp=detail?.created_time?Date.parse(String(detail.created_time)):Number(event?.timestamp||Date.now())
-    console.info('Meta message_edit resolved',JSON.stringify({hasSender:true,hasRecipient:true,hasMessage:true,usedFallback:Boolean(detail?._resolved_via_conversation)}))
+    console.info('Meta message_edit resolved',JSON.stringify({hasSender:true,hasRecipient:true,hasMessage:true,resolution}))
     return {
       timestamp:Number.isFinite(timestamp)?timestamp:Date.now(),
       sender:{id:senderId},
@@ -182,38 +190,72 @@ async function resolveIncomingEvent(admin:any,connection:any,event:any,channel:s
   }
 }
 
-async function getInstagramMessageDetail(mid:string,accessToken:string,version:string){
-  const url=new URL(`https://graph.instagram.com/${version}/${encodeURIComponent(mid)}`)
-  url.searchParams.set('fields','id,created_time,from,to,message')
-  return await metaJson(url.toString(),{headers:{Authorization:`Bearer ${accessToken}`}})
+async function tryMessageDetailAcrossHosts(mid:string,accessToken:string,version:string){
+  const hosts=['graph.instagram.com','graph.facebook.com']
+  for(const host of hosts){
+    try{
+      const url=new URL(`https://${host}/${version}/${encodeURIComponent(mid)}`)
+      url.searchParams.set('fields','id,created_time,from,to,message')
+      const detail=await metaJson(url.toString(),{headers:{Authorization:`Bearer ${accessToken}`}})
+      if(detail&&Object.keys(detail).length)return {...detail,_resolved_host:host}
+    }catch(err:any){
+      console.info('Meta message detail host failed',JSON.stringify({host,error:err?.message||'detail_failed'}))
+    }
+  }
+  return null
+}
+
+async function getInstagramIdentityCandidates(storedId:string,accessToken:string,version:string){
+  const ids=[storedId].filter(Boolean)
+  try{
+    const url=new URL(`https://graph.instagram.com/${version}/me`)
+    url.searchParams.set('fields','id,user_id')
+    const identity=await metaJson(url.toString(),{headers:{Authorization:`Bearer ${accessToken}`}})
+    if(identity?.id)ids.push(String(identity.id))
+    if(identity?.user_id)ids.push(String(identity.user_id))
+  }catch{}
+  return [...new Set(ids)]
 }
 
 function hasUsableMessage(detail:any){
   return Boolean(detail?.from?.id&&typeof detail?.message==='string'&&detail.message)
 }
 
-async function findMessageInRecentConversations(igUserId:string,mid:string,accessToken:string,version:string){
-  if(!igUserId)return null
-  const conversationsUrl=new URL(`https://graph.instagram.com/${version}/${encodeURIComponent(igUserId)}/conversations`)
-  conversationsUrl.searchParams.set('platform','instagram')
-  conversationsUrl.searchParams.set('limit','25')
-  const conversations=await metaJson(conversationsUrl.toString(),{headers:{Authorization:`Bearer ${accessToken}`}})
-  const rows=Array.isArray(conversations?.data)?conversations.data:[]
+async function findMessageInRecentConversations(igUserIds:string[],mid:string,accessToken:string,version:string){
+  for(const igUserId of igUserIds){
+    if(!igUserId)continue
+    for(let attempt=1;attempt<=3;attempt++){
+      if(attempt>1)await sleep(1200*attempt)
+      try{
+        const conversationsUrl=new URL(`https://graph.instagram.com/${version}/${encodeURIComponent(igUserId)}/conversations`)
+        conversationsUrl.searchParams.set('platform','instagram')
+        conversationsUrl.searchParams.set('fields','id,updated_time')
+        conversationsUrl.searchParams.set('limit','50')
+        const conversations=await metaJson(conversationsUrl.toString(),{headers:{Authorization:`Bearer ${accessToken}`}})
+        const rows=Array.isArray(conversations?.data)?conversations.data:[]
+        console.info('Meta message_edit conversation fallback list',JSON.stringify({igUserId,attempt,conversationCount:rows.length}))
 
-  for(const row of rows.slice(0,25)){
-    const conversationId=row?.id?String(row.id):''
-    if(!conversationId)continue
-    try{
-      const messagesUrl=new URL(`https://graph.instagram.com/${version}/${encodeURIComponent(conversationId)}`)
-      messagesUrl.searchParams.set('fields','messages.limit(20){id,created_time,from,to,message}')
-      const response=await metaJson(messagesUrl.toString(),{headers:{Authorization:`Bearer ${accessToken}`}})
-      const messages=Array.isArray(response?.messages?.data)?response.messages.data:[]
-      const match=messages.find((m:any)=>String(m?.id||'')===mid)
-      if(match)return {...match,_resolved_via_conversation:true}
-    }catch{}
+        for(const row of rows.slice(0,50)){
+          const conversationId=row?.id?String(row.id):''
+          if(!conversationId)continue
+          try{
+            const messagesUrl=new URL(`https://graph.instagram.com/${version}/${encodeURIComponent(conversationId)}`)
+            messagesUrl.searchParams.set('fields','messages.limit(50){id,created_time,from,to,message}')
+            const response=await metaJson(messagesUrl.toString(),{headers:{Authorization:`Bearer ${accessToken}`}})
+            const messages=Array.isArray(response?.messages?.data)?response.messages.data:[]
+            const match=messages.find((m:any)=>String(m?.id||'')===mid)
+            if(match)return {...match,_resolved_via_conversation:true}
+          }catch{}
+        }
+      }catch(err:any){
+        console.info('Meta message_edit conversation fallback failed',JSON.stringify({igUserId,attempt,error:err?.message||'conversation_lookup_failed'}))
+      }
+    }
   }
   return null
 }
+
+function sleep(ms:number){return new Promise(resolve=>setTimeout(resolve,ms))}
 
 function collectEvents(entry:any){
   const direct=Array.isArray(entry?.messaging)?entry.messaging:[]
