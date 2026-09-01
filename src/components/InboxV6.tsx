@@ -6,6 +6,8 @@ import InboxOpportunityBar from '@/components/InboxOpportunityBar'
 import {supabase} from '@/lib/supabase'
 import '@/app/inbox-v6.css'
 
+type InstagramAvatar={handle:string;url:string}
+
 export default function InboxV6(){
  const [focus,setFocus]=useState(false)
  const [showInfo,setShowInfo]=useState(true)
@@ -30,6 +32,91 @@ export default function InboxV6(){
   syncInstagram()
   const timer=window.setInterval(syncInstagram,15000)
   return()=>{cancelled=true;window.clearInterval(timer)}
+ },[])
+
+ useEffect(()=>{
+  let cancelled=false
+  let observer:MutationObserver|null=null
+  let avatars:InstagramAvatar[]=[]
+
+  function normalizedHandle(v:string){
+   const clean=v.trim().toLowerCase()
+   return clean.startsWith('@')?clean:`@${clean}`
+  }
+
+  function findAvatar(text:string){
+   const lower=text.toLowerCase()
+   return avatars.find(a=>lower.includes(a.handle))||null
+  }
+
+  function mountPhoto(target:Element|null,avatar:InstagramAvatar|null,size:number){
+   if(!target||!avatar?.url)return
+   const el=target as HTMLElement
+   if(el.dataset.profilePic===avatar.url)return
+   el.dataset.profilePic=avatar.url
+   el.innerHTML=''
+   const img=document.createElement('img')
+   img.src=avatar.url
+   img.alt='Foto de perfil de Instagram'
+   img.referrerPolicy='no-referrer'
+   img.style.width=`${size}px`
+   img.style.height=`${size}px`
+   img.style.borderRadius='999px'
+   img.style.objectFit='cover'
+   img.style.display='block'
+   img.addEventListener('error',()=>{
+    el.dataset.profilePic=''
+    img.remove()
+   },{once:true})
+   el.appendChild(img)
+  }
+
+  function applyAvatars(){
+   if(cancelled||!avatars.length)return
+   document.querySelectorAll<HTMLElement>('.conversation-item').forEach(item=>{
+    const avatar=findAvatar(item.textContent||'')
+    mountPhoto(item.querySelector('.channel-bubble'),avatar,32)
+   })
+   const chatPerson=document.querySelector<HTMLElement>('.chat-person')
+   if(chatPerson){
+    const avatar=findAvatar(chatPerson.textContent||'')
+    mountPhoto(chatPerson.querySelector('.contact-avatar'),avatar,38)
+   }
+   const sideProfile=document.querySelector<HTMLElement>('.side-profile')
+   if(sideProfile){
+    const avatar=findAvatar(sideProfile.textContent||'')
+    mountPhoto(sideProfile.querySelector('.profile-avatar.small'),avatar,42)
+   }
+  }
+
+  async function loadAvatars(){
+   try{
+    const {data,error}=await supabase.from('contact_channels').select('handle,metadata').eq('channel','instagram')
+    if(error||cancelled)return
+    avatars=(data||[]).map((row:any)=>{
+     const rawHandle=String(row?.handle||row?.metadata?.username||'').trim()
+     const url=String(row?.metadata?.profile_pic||'').trim()
+     return rawHandle&&url?{handle:normalizedHandle(rawHandle),url}:null
+    }).filter(Boolean) as InstagramAvatar[]
+    applyAvatars()
+    observer=new MutationObserver(()=>applyAvatars())
+    observer.observe(document.body,{subtree:true,childList:true,characterData:true})
+   }catch{}
+  }
+
+  loadAvatars()
+  const refresh=window.setInterval(async()=>{
+   if(cancelled)return
+   const {data}=await supabase.from('contact_channels').select('handle,metadata').eq('channel','instagram')
+   avatars=(data||[]).map((row:any)=>{
+    const rawHandle=String(row?.handle||row?.metadata?.username||'').trim()
+    const url=String(row?.metadata?.profile_pic||'').trim()
+    return rawHandle&&url?{handle:normalizedHandle(rawHandle),url}:null
+   }).filter(Boolean) as InstagramAvatar[]
+   applyAvatars()
+  },15000)
+
+  return()=>{cancelled=true;observer?.disconnect();window.clearInterval(refresh)}
  },[])
 
  useEffect(()=>{
