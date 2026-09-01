@@ -1,3 +1,6 @@
 import AutomationsV5 from '@/components/AutomationsV5'
+import AutomationTemplates from '@/components/AutomationTemplates'
 
-export default AutomationsV5
+export default function AutomationsPage(){
+ return <><AutomationTemplates/><AutomationsV5/></>
+}
