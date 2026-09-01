@@ -27,17 +27,16 @@ export default function AutomationDraftBridge(){
    textarea.scrollIntoView({block:'nearest',behavior:'smooth'})
   }
 
-  async function consumeDraft(conversationId:string,metadata:any,key:string,reason:'used'|'dismissed'){
+  async function consumeDraft(conversationId:string,key:string,reason:'used'|'dismissed'){
    consumedKeys.add(key)
-   const next={...(metadata||{})}
-   delete next.automation_draft_reply
-   next.automation_draft_reply_consumed_at=new Date().toISOString()
-   next.automation_draft_reply_consumed_reason=reason
-   const {error}=await supabase.from('conversations').update({metadata:next}).eq('id',conversationId)
-   if(error)console.error('Could not consume automation draft',error)
+   const {error}=await supabase.rpc('consume_automation_draft',{p_conversation_id:conversationId,p_reason:reason})
+   if(error){
+    consumedKeys.delete(key)
+    console.error('Could not consume automation draft',error)
+   }
   }
 
-  function mountDraft(body:string,createdAt:string,conversationId:string,metadata:any){
+  function mountDraft(body:string,createdAt:string,conversationId:string){
    const composer=document.querySelector<HTMLElement>('.composer')
    if(!composer)return
    const parent=composer.parentElement
@@ -84,7 +83,7 @@ export default function AutomationDraftBridge(){
    use.addEventListener('click',()=>{
     fillComposer(body)
     box.remove()
-    void consumeDraft(conversationId,metadata,key,'used')
+    void consumeDraft(conversationId,key,'used')
    })
 
    const dismiss=document.createElement('button')
@@ -93,7 +92,7 @@ export default function AutomationDraftBridge(){
    dismiss.textContent='Ocultar'
    dismiss.addEventListener('click',()=>{
     box.remove()
-    void consumeDraft(conversationId,metadata,key,'dismissed')
+    void consumeDraft(conversationId,key,'dismissed')
    })
 
    actions.append(use,dismiss)
@@ -123,7 +122,7 @@ export default function AutomationDraftBridge(){
    const draft=(conv.metadata as any)?.automation_draft_reply
    const body=String(draft?.body||'').trim()
    if(!body){document.querySelector('.lumo-automation-draft')?.remove();return}
-   mountDraft(body,String(draft?.created_at||''),conv.id,conv.metadata)
+   mountDraft(body,String(draft?.created_at||''),conv.id)
   }
 
   let pending=false
