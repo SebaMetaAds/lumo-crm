@@ -18,14 +18,20 @@ export default function AutomationDraftBridge(){
    const textarea=document.querySelector<HTMLTextAreaElement>('.composer textarea')
    if(!textarea)return
    const setter=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value')?.set
-   setter?.call(textarea,body)
+   if(setter)setter.call(textarea,body)
+   else textarea.value=body
    textarea.dispatchEvent(new Event('input',{bubbles:true}))
    textarea.focus()
+   textarea.setSelectionRange(textarea.value.length,textarea.value.length)
+   textarea.scrollIntoView({block:'nearest',behavior:'smooth'})
   }
 
   function mountDraft(body:string,createdAt:string){
    const composer=document.querySelector<HTMLElement>('.composer')
    if(!composer)return
+   const parent=composer.parentElement
+   if(!parent)return
+
    const existing=document.querySelector<HTMLElement>('.lumo-automation-draft')
    const key=`${createdAt}:${body}`
    if(existing?.dataset.draftKey===key)return
@@ -34,32 +40,39 @@ export default function AutomationDraftBridge(){
    const box=document.createElement('div')
    box.className='lumo-automation-draft'
    box.dataset.draftKey=key
-   box.style.gridColumn='1 / -1'
-   box.style.padding='10px 12px'
-   box.style.border='1px solid rgba(99,102,241,.18)'
-   box.style.background='rgba(99,102,241,.06)'
-   box.style.borderRadius='10px'
-   box.style.marginBottom='8px'
+   box.style.padding='11px 12px'
+   box.style.border='1px solid rgba(99,102,241,.2)'
+   box.style.background='rgba(99,102,241,.055)'
+   box.style.borderRadius='12px'
+   box.style.margin='0 0 8px 0'
+   box.style.width='100%'
+   box.style.boxSizing='border-box'
 
    const top=document.createElement('div')
    top.style.display='flex'
    top.style.justifyContent='space-between'
    top.style.gap='10px'
    top.style.alignItems='center'
+   top.style.flexWrap='wrap'
 
    const label=document.createElement('strong')
    label.textContent='Borrador automático · requiere aprobación'
    label.style.fontSize='12px'
+   label.style.lineHeight='1.3'
 
    const actions=document.createElement('div')
    actions.style.display='flex'
    actions.style.gap='6px'
+   actions.style.flexShrink='0'
 
    const use=document.createElement('button')
    use.type='button'
    use.className='primary compact'
    use.textContent='Usar borrador'
-   use.addEventListener('click',()=>fillComposer(body))
+   use.addEventListener('click',()=>{
+    fillComposer(body)
+    box.remove()
+   })
 
    const dismiss=document.createElement('button')
    dismiss.type='button'
@@ -74,11 +87,12 @@ export default function AutomationDraftBridge(){
    preview.textContent=body
    preview.style.fontSize='13px'
    preview.style.lineHeight='1.45'
-   preview.style.marginTop='7px'
+   preview.style.marginTop='8px'
    preview.style.whiteSpace='pre-wrap'
+   preview.style.wordBreak='break-word'
 
    box.append(top,preview)
-   composer.prepend(box)
+   parent.insertBefore(box,composer)
   }
 
   async function applyDraft(){
