@@ -118,6 +118,24 @@ async function executeAction(admin:any,workspaceId:string,type:string,config:any
     return {conversation_id:conversationId,assigned_user_id:String(value)}
   }
 
+  if(type==='add_tag'){
+    if(!conversationId)throw new Error('La automatización necesita una conversación')
+    const tag=String(value||'').trim()
+    if(!tag)throw new Error('Falta la etiqueta a agregar')
+    const {error}=await admin.from('conversation_tags').upsert({workspace_id:workspaceId,conversation_id:conversationId,tag},{onConflict:'conversation_id,tag',ignoreDuplicates:true})
+    if(error)throw error
+    return {conversation_id:conversationId,tag,added:true}
+  }
+
+  if(type==='remove_tag'){
+    if(!conversationId)throw new Error('La automatización necesita una conversación')
+    const tag=String(value||'').trim()
+    if(!tag)throw new Error('Falta la etiqueta a quitar')
+    const {error}=await admin.from('conversation_tags').delete().eq('workspace_id',workspaceId).eq('conversation_id',conversationId).eq('tag',tag)
+    if(error)throw error
+    return {conversation_id:conversationId,tag,removed:true}
+  }
+
   if(type==='create_task'){
     const title=String(value||'Seguimiento de conversación').trim()
     const {data,error}=await admin.from('tasks').insert({
