@@ -1,16 +1,9 @@
 'use client'
 import {useEffect,useState} from 'react'
-import {Flame,PackageCheck,Truck,TriangleAlert,Zap} from 'lucide-react'
+import {Flame,PackageCheck,Truck,TriangleAlert,X,Zap} from 'lucide-react'
 import {supabase} from '@/lib/supabase'
 
-type Template={
- key:string
- name:string
- description:string
- intent:string
- icon:any
- actions:{type:string;value:string}[]
-}
+type Template={key:string;name:string;description:string;intent:string;icon:any;actions:{type:string;value:string}[]}
 
 const templates:Template[]=[
  {key:'stock',name:'Detectar consultas de stock',description:'Etiqueta la conversación como Stock cuando Lumo detecta una consulta de disponibilidad.',intent:'availability',icon:PackageCheck,actions:[{type:'add_tag',value:'Stock'}]},
@@ -25,6 +18,7 @@ export default function AutomationTemplates(){
  const [existing,setExisting]=useState<string[]>([])
  const [busy,setBusy]=useState<string|null>(null)
  const [message,setMessage]=useState('')
+ const [open,setOpen]=useState(false)
 
  useEffect(()=>{bootstrap()},[])
  async function bootstrap(){
@@ -42,18 +36,10 @@ export default function AutomationTemplates(){
  async function activate(t:Template){
   if(!workspaceId||!userId)return
   setBusy(t.key);setMessage('')
-  const actionConfig={actions:t.actions.map(a=>({type:a.type,config:{value:a.value}}))}
   const {error}=await supabase.from('automations').insert({
-   workspace_id:workspaceId,
-   name:t.name,
-   description:t.description,
-   status:'active',
-   trigger_type:'message_received',
-   trigger_config:{},
+   workspace_id:workspaceId,name:t.name,description:t.description,status:'active',trigger_type:'message_received',trigger_config:{},
    condition_config:{logic:'and',conditions:[{field:'intent',operator:'equals',value:t.intent}]},
-   action_type:t.actions[0].type,
-   action_config:actionConfig,
-   created_by:userId,
+   action_type:t.actions[0].type,action_config:{actions:t.actions.map(a=>({type:a.type,config:{value:a.value}}))},created_by:userId,
   })
   setBusy(null)
   if(error){setMessage(error.message);return}
@@ -62,16 +48,12 @@ export default function AutomationTemplates(){
   window.setTimeout(()=>window.location.reload(),700)
  }
 
- return <section className="panel" style={{padding:16,marginBottom:18}}>
-  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,marginBottom:12}}>
-   <div><div style={{display:'flex',gap:7,alignItems:'center'}}><Zap size={17}/><strong>Automatizaciones recomendadas para el Inbox</strong></div><p style={{margin:'4px 0 0',fontSize:13,opacity:.64}}>Podés activarlas con un clic. No envían mensajes solas: solo clasifican y priorizan.</p></div>
-  </div>
-  {message&&<div style={{fontSize:12,marginBottom:10,opacity:.75}}>{message}</div>}
-  <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:10}}>
-   {templates.map(t=>{const Icon=t.icon,active=existing.includes(t.name);return <div key={t.key} style={{border:'1px solid rgba(15,23,42,.09)',borderRadius:12,padding:13,display:'flex',gap:11,alignItems:'flex-start'}}>
-    <div style={{width:34,height:34,borderRadius:10,display:'grid',placeItems:'center',background:'rgba(99,102,241,.08)',flex:'0 0 auto'}}><Icon size={17}/></div>
-    <div style={{minWidth:0,flex:1}}><strong style={{display:'block',fontSize:13}}>{t.name}</strong><span style={{display:'block',fontSize:12,lineHeight:1.4,opacity:.62,marginTop:3}}>{t.description}</span><button className={active?'secondary compact':'primary compact'} style={{marginTop:9}} disabled={active||busy===t.key} onClick={()=>activate(t)}>{active?'Ya creada':busy===t.key?'Activando…':'Activar'}</button></div>
-   </div>})}
-  </div>
- </section>
+ return <>
+  <button className="primary compact" onClick={()=>setOpen(v=>!v)} style={{position:'fixed',right:22,bottom:22,zIndex:70,boxShadow:'0 12px 30px rgba(15,23,42,.18)'}}><Zap size={16}/> Recomendadas</button>
+  {open&&<div className="panel" style={{position:'fixed',right:22,bottom:72,zIndex:71,width:'min(720px,calc(100vw - 44px))',maxHeight:'72vh',overflow:'auto',padding:16,boxShadow:'0 22px 60px rgba(15,23,42,.22)'}}>
+   <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12,marginBottom:12}}><div><div style={{display:'flex',gap:7,alignItems:'center'}}><Zap size={17}/><strong>Automatizaciones recomendadas para el Inbox</strong></div><p style={{margin:'4px 0 0',fontSize:13,opacity:.64}}>Se activan con un clic. No envían mensajes solas: clasifican y priorizan.</p></div><button className="iconbtn" onClick={()=>setOpen(false)}><X size={15}/></button></div>
+   {message&&<div style={{fontSize:12,marginBottom:10,opacity:.75}}>{message}</div>}
+   <div style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:10}}>{templates.map(t=>{const Icon=t.icon,active=existing.includes(t.name);return <div key={t.key} style={{border:'1px solid rgba(15,23,42,.09)',borderRadius:12,padding:13,display:'flex',gap:11,alignItems:'flex-start'}}><div style={{width:34,height:34,borderRadius:10,display:'grid',placeItems:'center',background:'rgba(99,102,241,.08)',flex:'0 0 auto'}}><Icon size={17}/></div><div style={{minWidth:0,flex:1}}><strong style={{display:'block',fontSize:13}}>{t.name}</strong><span style={{display:'block',fontSize:12,lineHeight:1.4,opacity:.62,marginTop:3}}>{t.description}</span><button className={active?'secondary compact':'primary compact'} style={{marginTop:9}} disabled={active||busy===t.key} onClick={()=>activate(t)}>{active?'Ya creada':busy===t.key?'Activando…':'Activar'}</button></div></div>})}</div>
+  </div>}
+ </>
 }
