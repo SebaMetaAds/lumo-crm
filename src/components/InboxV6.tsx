@@ -3,6 +3,7 @@ import {useEffect,useState} from 'react'
 import {BriefcaseBusiness,ChevronLeft,ChevronRight,Command,PanelRightClose,PanelRightOpen,Maximize2,Minimize2,X} from 'lucide-react'
 import InboxV4 from '@/components/InboxV4'
 import InboxOpportunityBar from '@/components/InboxOpportunityBar'
+import InboxMediaBridge from '@/components/InboxMediaBridge'
 import {supabase} from '@/lib/supabase'
 import '@/app/inbox-v6.css'
 
@@ -151,6 +152,7 @@ export default function InboxV6(){
  }
 
  return <div className="inbox-v6-shell">
+  <InboxMediaBridge/>
   <div className="inbox-v6-floating-tools">
    <button className="v6-tool" title="Conversación anterior" onClick={()=>move(-1)}><ChevronLeft size={15}/></button>
    <button className="v6-tool" title="Conversación siguiente" onClick={()=>move(1)}><ChevronRight size={15}/></button>
