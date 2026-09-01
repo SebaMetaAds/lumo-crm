@@ -16,10 +16,15 @@ const intentRules:Array<{intent:InboxIntent;label:string;words:string[];priority
 
 export function analyzeConversation(messages:Msg[]):InboxInsight{
  const inbound=messages.filter(m=>m.direction!=='outgoing'&&m.body?.trim())
- const all=inbound.map(m=>String(m.body||'')).join(' ').toLowerCase()
+ const latestMessage=String(inbound[inbound.length-1]?.body||'').trim().toLowerCase()
+ const recentContext=inbound.slice(-3).map(m=>String(m.body||'').trim()).filter(Boolean)
+ const contextText=recentContext.join(' ').toLowerCase()
+
+ // The current incoming message decides the actionable intent. Older messages are
+ // only context, so a previous complaint cannot hijack a new stock/shipping query.
  let best=intentRules[intentRules.length-1],bestScore=0,signals:string[]=[]
  for(const rule of intentRules){
-  const matched=rule.words.filter(w=>all.includes(w))
+  const matched=rule.words.filter(w=>latestMessage.includes(w))
   const score=matched.length
   if(score>bestScore){best=rule;bestScore=score;signals=matched.slice(0,4)}
  }
@@ -27,14 +32,19 @@ export function analyzeConversation(messages:Msg[]):InboxInsight{
   best={intent:'other',label:'Consulta general',words:[],priority:'normal'}
   signals=[]
  }
- const latest=inbound.slice(-3).map(m=>String(m.body||'').trim()).filter(Boolean)
- const summary=buildSummary(latest,best.label)
- const urgencySignals=['urgente','hoy','ya','ahora','cuanto antes','cuánto antes','necesito resolver'].filter(w=>all.includes(w))
+
+ const summary=buildSummary(recentContext,best.label)
+ const urgencySignals=['urgente','hoy','ya','ahora','cuanto antes','cuánto antes','necesito resolver'].filter(w=>latestMessage.includes(w))
  let priority=best.priority
  if(best.intent==='complaint'&&urgencySignals.length)priority='urgent'
  else if(urgencySignals.length&&priority==='normal')priority='high'
- const confidence=Math.min(.95,.45+bestScore*.14+(urgencySignals.length?0.05:0))
- return {intent:best.intent,intent_label:best.label,confidence:Number(confidence.toFixed(2)),suggested_priority:priority,summary,suggested_replies:replySuggestions(best.intent,latest[latest.length-1]||''),signals:[...signals,...urgencySignals].slice(0,6)}
+
+ // Confidence is based primarily on the current message. A small context bonus is
+ // allowed only when the same intent also appears in the recent conversation.
+ const contextMatches=best.intent==='other'?0:best.words.filter(w=>contextText.includes(w)).length
+ const contextBonus=contextMatches>bestScore?0.04:0
+ const confidence=Math.min(.95,.45+bestScore*.14+contextBonus+(urgencySignals.length?0.05:0))
+ return {intent:best.intent,intent_label:best.label,confidence:Number(confidence.toFixed(2)),suggested_priority:priority,summary,suggested_replies:replySuggestions(best.intent,recentContext[recentContext.length-1]||''),signals:[...signals,...urgencySignals].slice(0,6)}
 }
 
 function buildSummary(latest:string[],label:string){
