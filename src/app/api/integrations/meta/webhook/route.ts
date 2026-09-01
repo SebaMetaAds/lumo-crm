@@ -85,19 +85,48 @@ export async function POST(req:NextRequest){
           const externalMessageId=event.message.mid?String(event.message.mid):null
           const body=event.message.text||attachmentSummary(event.message.attachments)||null
           const now=event.timestamp?new Date(Number(event.timestamp)).toISOString():new Date().toISOString()
+          const instagramProfile=channel==='instagram'?await getInstagramSenderProfile(admin,connection,externalUserId):null
+          const instagramUsername=instagramProfile?.username?String(instagramProfile.username).replace(/^@/,''):''
+          const instagramHandle=instagramUsername?`@${instagramUsername}`:externalUserId
 
           const {data:identity,error:identityError}=await admin.from('contact_channels').select('contact_id').eq('workspace_id',connection.workspace_id).eq('channel',channel).eq('external_user_id',externalUserId).limit(1).maybeSingle()
           if(identityError)throw identityError
           let contactId=identity?.contact_id||null
           if(!contactId){
-            const {data:contact,error:ce}=await admin.from('contacts').insert({workspace_id:connection.workspace_id,first_name:channel==='instagram'?'Instagram':'Facebook',last_name:'Lead',source:channel,last_interaction_at:now}).select('id').single()
+            const {data:contact,error:ce}=await admin.from('contacts').insert({
+              workspace_id:connection.workspace_id,
+              first_name:channel==='instagram'?(instagramUsername?`@${instagramUsername}`:'Instagram'):'Facebook',
+              last_name:channel==='instagram'&&instagramUsername?null:'Lead',
+              source:channel,
+              last_interaction_at:now
+            }).select('id').single()
             if(ce)throw ce
             contactId=contact.id
-            const {error:ie}=await admin.from('contact_channels').insert({workspace_id:connection.workspace_id,contact_id:contactId,channel,external_user_id:externalUserId,handle:externalUserId,is_primary:true,metadata:{provider:'meta'}})
+            const {error:ie}=await admin.from('contact_channels').insert({
+              workspace_id:connection.workspace_id,
+              contact_id:contactId,
+              channel,
+              external_user_id:externalUserId,
+              handle:channel==='instagram'?instagramHandle:externalUserId,
+              is_primary:true,
+              metadata:{provider:'meta',username:instagramUsername||null,name:instagramProfile?.name||null,profile_pic:instagramProfile?.profile_pic||null}
+            })
             if(ie)throw ie
           }else{
-            const {error:updateContactError}=await admin.from('contacts').update({last_interaction_at:now}).eq('id',contactId).eq('workspace_id',connection.workspace_id)
+            const contactUpdate:any={last_interaction_at:now}
+            if(channel==='instagram'&&instagramUsername){
+              contactUpdate.first_name=`@${instagramUsername}`
+              contactUpdate.last_name=null
+            }
+            const {error:updateContactError}=await admin.from('contacts').update(contactUpdate).eq('id',contactId).eq('workspace_id',connection.workspace_id)
             if(updateContactError)throw updateContactError
+            if(channel==='instagram'&&instagramUsername){
+              const {error:updateChannelError}=await admin.from('contact_channels').update({
+                handle:instagramHandle,
+                metadata:{provider:'meta',username:instagramUsername,name:instagramProfile?.name||null,profile_pic:instagramProfile?.profile_pic||null}
+              }).eq('workspace_id',connection.workspace_id).eq('channel','instagram').eq('external_user_id',externalUserId)
+              if(updateChannelError)throw updateChannelError
+            }
           }
 
           const {data:existingConv,error:convLookupError}=await admin.from('conversations').select('id,unread_count,metadata').eq('channel_connection_id',connection.id).eq('external_conversation_id',externalUserId).limit(1).maybeSingle()
@@ -132,7 +161,7 @@ export async function POST(req:NextRequest){
             await runAutomations(admin,{workspaceId:connection.workspace_id,triggerType:'conversation_created',payload:automationPayload})
           }
           await runAutomations(admin,{workspaceId:connection.workspace_id,triggerType:'message_received',payload:automationPayload})
-          console.info('Meta webhook message ingested',JSON.stringify({channel,connectionId:connection.id,conversationId:conversation.id,externalMessageId:externalMessageId||null,resolvedFromEdit:Boolean(rawEvent?.message_edit)}))
+          console.info('Meta webhook message ingested',JSON.stringify({channel,connectionId:connection.id,conversationId:conversation.id,externalMessageId:externalMessageId||null,resolvedFromEdit:Boolean(rawEvent?.message_edit),instagramUsername:instagramUsername||null}))
         }
       }
     }
@@ -141,6 +170,31 @@ export async function POST(req:NextRequest){
     console.error('Meta webhook error',err)
     return NextResponse.json({error:'Webhook processing failed'},{status:500})
   }
+}
+
+async function getInstagramSenderProfile(admin:any,connection:any,externalUserId:string){
+  try{
+    const {data:secretRows,error}=await admin.rpc('get_channel_connection_secret',{p_connection_id:connection.id})
+    const secret=secretRows?.[0]
+    if(error||!secret?.access_token)return null
+    const version=igGraphVersion()
+    for(const fields of ['id,username,name,profile_pic','id,username,name']){
+      try{
+        const url=new URL(`https://graph.instagram.com/${version}/${encodeURIComponent(externalUserId)}`)
+        url.searchParams.set('fields',fields)
+        const profile=await metaJson(url.toString(),{headers:{Authorization:`Bearer ${secret.access_token}`}})
+        if(profile?.username){
+          console.info('Instagram sender profile resolved',JSON.stringify({externalUserId,hasUsername:true,hasName:Boolean(profile?.name),hasProfilePic:Boolean(profile?.profile_pic)}))
+          return profile
+        }
+      }catch(err:any){
+        console.info('Instagram sender profile lookup failed',JSON.stringify({externalUserId,fields,error:err?.message||'profile_lookup_failed'}))
+      }
+    }
+  }catch(err:any){
+    console.info('Instagram sender profile lookup failed',JSON.stringify({externalUserId,error:err?.message||'profile_lookup_failed'}))
+  }
+  return null
 }
 
 async function resolveIncomingEvent(admin:any,connection:any,event:any,channel:string){
