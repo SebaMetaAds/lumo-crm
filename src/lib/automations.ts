@@ -145,10 +145,24 @@ async function executeAction(admin:any,workspaceId:string,type:string,config:any
     const suggested=Array.isArray(intelligence.suggested_replies)?intelligence.suggested_replies.find((x:any)=>String(x||'').trim()):null
     const body=String(value&&value!=='__suggested__'?value:(suggested||'')).trim()
     if(!body)return {conversation_id:conversationId,drafted:false,reason:'no_suggested_reply'}
-    const draft={body,source:'automation',created_at:new Date().toISOString(),intent:intelligence.intent||payload.intent||null}
-    const {error}=await admin.from('conversations').update({metadata:{...metadata,automation_draft_reply:draft}}).eq('id',conversationId).eq('workspace_id',workspaceId)
+    const draft={
+      id:globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      body,
+      source:'automation',
+      created_at:new Date().toISOString(),
+      intent:intelligence.intent||payload.intent||null,
+      message_id:payload.message_id||null
+    }
+    const existingQueue=Array.isArray(metadata.automation_draft_replies)?metadata.automation_draft_replies:[]
+    const legacy=metadata.automation_draft_reply?[metadata.automation_draft_reply]:[]
+    const queue=[...legacy,...existingQueue,draft]
+      .filter((x:any)=>String(x?.body||'').trim())
+      .slice(-5)
+    const nextMetadata={...metadata,automation_draft_replies:queue}
+    delete nextMetadata.automation_draft_reply
+    const {error}=await admin.from('conversations').update({metadata:nextMetadata}).eq('id',conversationId).eq('workspace_id',workspaceId)
     if(error)throw error
-    return {conversation_id:conversationId,drafted:true,body}
+    return {conversation_id:conversationId,drafted:true,body,draft_id:draft.id,queue_size:queue.length}
   }
 
   if(type==='create_task'){
