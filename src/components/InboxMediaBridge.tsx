@@ -77,6 +77,15 @@ export default function InboxMediaBridge(){
     video.style.borderRadius='12px'
     video.addEventListener('error',()=>{wrap.remove();if(label)label.style.display=''}, {once:true})
     wrap.appendChild(video)
+   }else if(item.type==='audio'){
+    const audio=document.createElement('audio')
+    audio.src=item.url
+    audio.controls=true
+    audio.preload='metadata'
+    audio.style.display='block'
+    audio.style.width='min(320px, 100%)'
+    audio.addEventListener('error',()=>{wrap.remove();if(label)label.style.display=''}, {once:true})
+    wrap.appendChild(audio)
    }else if(item.type==='ig_reel'){
     const embed=instagramEmbedUrl(item.url)
     if(embed){
@@ -142,7 +151,7 @@ export default function InboxMediaBridge(){
 
    const media=(data||[]).filter((row:any)=>mediaItem(row as MediaRow)) as MediaRow[]
    const bubbles=[...document.querySelectorAll<HTMLElement>('.message-line.incoming .message-bubble')]
-    .filter(b=>/Adjunto:\s*(image|video|ig_reel)/i.test(b.textContent||''))
+    .filter(b=>/Adjunto:\s*(image|video|audio|ig_reel)/i.test(b.textContent||''))
    bubbles.forEach((bubble,index)=>{const row=media[index];if(row)mountMedia(bubble,row)})
   }
 
