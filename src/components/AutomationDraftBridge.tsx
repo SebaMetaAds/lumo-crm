@@ -27,11 +27,12 @@ export default function AutomationDraftBridge(){
    textarea.scrollIntoView({block:'nearest',behavior:'smooth'})
   }
 
-  async function consumeDraft(conversationId:string,metadata:any,key:string){
+  async function consumeDraft(conversationId:string,metadata:any,key:string,reason:'used'|'dismissed'){
    consumedKeys.add(key)
    const next={...(metadata||{})}
    delete next.automation_draft_reply
    next.automation_draft_reply_consumed_at=new Date().toISOString()
+   next.automation_draft_reply_consumed_reason=reason
    const {error}=await supabase.from('conversations').update({metadata:next}).eq('id',conversationId)
    if(error)console.error('Could not consume automation draft',error)
   }
@@ -83,14 +84,17 @@ export default function AutomationDraftBridge(){
    use.addEventListener('click',()=>{
     fillComposer(body)
     box.remove()
-    void consumeDraft(conversationId,metadata,key)
+    void consumeDraft(conversationId,metadata,key,'used')
    })
 
    const dismiss=document.createElement('button')
    dismiss.type='button'
    dismiss.className='secondary compact'
    dismiss.textContent='Ocultar'
-   dismiss.addEventListener('click',()=>box.remove())
+   dismiss.addEventListener('click',()=>{
+    box.remove()
+    void consumeDraft(conversationId,metadata,key,'dismissed')
+   })
 
    actions.append(use,dismiss)
    top.append(label,actions)
