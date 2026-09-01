@@ -7,6 +7,7 @@ export default function AutomationDraftBridge(){
   let cancelled=false
   let observer:MutationObserver|null=null
   let timer:number|undefined
+  const consumedKeys=new Set<string>()
 
   function currentHandle(){
    const text=document.querySelector<HTMLElement>('.chat-person')?.textContent||''
@@ -26,7 +27,16 @@ export default function AutomationDraftBridge(){
    textarea.scrollIntoView({block:'nearest',behavior:'smooth'})
   }
 
-  function mountDraft(body:string,createdAt:string){
+  async function consumeDraft(conversationId:string,metadata:any,key:string){
+   consumedKeys.add(key)
+   const next={...(metadata||{})}
+   delete next.automation_draft_reply
+   next.automation_draft_reply_consumed_at=new Date().toISOString()
+   const {error}=await supabase.from('conversations').update({metadata:next}).eq('id',conversationId)
+   if(error)console.error('Could not consume automation draft',error)
+  }
+
+  function mountDraft(body:string,createdAt:string,conversationId:string,metadata:any){
    const composer=document.querySelector<HTMLElement>('.composer')
    if(!composer)return
    const parent=composer.parentElement
@@ -34,6 +44,7 @@ export default function AutomationDraftBridge(){
 
    const existing=document.querySelector<HTMLElement>('.lumo-automation-draft')
    const key=`${createdAt}:${body}`
+   if(consumedKeys.has(key)){existing?.remove();return}
    if(existing?.dataset.draftKey===key)return
    existing?.remove()
 
@@ -72,6 +83,7 @@ export default function AutomationDraftBridge(){
    use.addEventListener('click',()=>{
     fillComposer(body)
     box.remove()
+    void consumeDraft(conversationId,metadata,key)
    })
 
    const dismiss=document.createElement('button')
@@ -107,7 +119,7 @@ export default function AutomationDraftBridge(){
    const draft=(conv.metadata as any)?.automation_draft_reply
    const body=String(draft?.body||'').trim()
    if(!body){document.querySelector('.lumo-automation-draft')?.remove();return}
-   mountDraft(body,String(draft?.created_at||''))
+   mountDraft(body,String(draft?.created_at||''),conv.id,conv.metadata)
   }
 
   let pending=false
