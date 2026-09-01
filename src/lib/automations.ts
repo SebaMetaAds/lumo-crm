@@ -136,6 +136,21 @@ async function executeAction(admin:any,workspaceId:string,type:string,config:any
     return {conversation_id:conversationId,tag,removed:true}
   }
 
+  if(type==='draft_reply'){
+    if(!conversationId)throw new Error('La automatización necesita una conversación')
+    const {data:conv,error:convError}=await admin.from('conversations').select('metadata').eq('id',conversationId).eq('workspace_id',workspaceId).maybeSingle()
+    if(convError)throw convError
+    const metadata=conv?.metadata||{}
+    const intelligence=metadata.intelligence||metadata.inbox_intelligence||{}
+    const suggested=Array.isArray(intelligence.suggested_replies)?intelligence.suggested_replies.find((x:any)=>String(x||'').trim()):null
+    const body=String(value&&value!=='__suggested__'?value:(suggested||'')).trim()
+    if(!body)return {conversation_id:conversationId,drafted:false,reason:'no_suggested_reply'}
+    const draft={body,source:'automation',created_at:new Date().toISOString(),intent:intelligence.intent||payload.intent||null}
+    const {error}=await admin.from('conversations').update({metadata:{...metadata,automation_draft_reply:draft}}).eq('id',conversationId).eq('workspace_id',workspaceId)
+    if(error)throw error
+    return {conversation_id:conversationId,drafted:true,body}
+  }
+
   if(type==='create_task'){
     const title=String(value||'Seguimiento de conversación').trim()
     const {data,error}=await admin.from('tasks').insert({
