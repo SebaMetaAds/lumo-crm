@@ -21,8 +21,6 @@ export function analyzeConversation(messages:Msg[]):InboxInsight{
  const recentContext=inbound.slice(-3).map(m=>String(m.body||'').trim()).filter(Boolean)
  const contextText=recentContext.join(' ').toLowerCase()
 
- // The current incoming message decides the actionable intent. Older messages are
- // only context, so a previous complaint cannot hijack a new query.
  let best=intentRules[intentRules.length-1],bestScore=0,signals:string[]=[]
  for(const rule of intentRules){
   const matched=rule.words.filter(w=>latestMessage.includes(w))
@@ -55,30 +53,58 @@ function buildSummary(latest:string[],label:string){
 
 function includesAny(text:string,terms:string[]){return terms.some(t=>text.includes(t))}
 
+function hasSpecificSubject(raw:string,intent:InboxIntent){
+ let text=raw.toLowerCase()
+ text=text.replace(/[¿?¡!.,]/g,' ')
+ text=text.replace(/\b(hola|buen día|buen dia|buenas|por favor|gracias)\b/g,' ')
+ const generic:Record<string,string[]>={
+  availability:['tenés','tenes','tienen','hay','stock','disponible','disponibilidad','queda','agotado','agotada'],
+  product:['qué','que','cuál','cual','medida','medidas','tamaño','tamano','color','material','modelo','producto','tiene','tienen','es','son'],
+  price:['cuánto','cuanto','sale','precio','valor','cuesta','promo','promoción','oferta','descuento','del','de','la','el'],
+  payment:['puedo','pagar','pago','cuotas','tarjeta','transferencia','mercado','mercadopago','efectivo','financiación','financiacion'],
+ }
+ for(const word of generic[intent]||[])text=text.replace(new RegExp(`\\b${word}\\b`,'g'),' ')
+ text=text.replace(/\s+/g,' ').trim()
+ return text.split(' ').filter(Boolean).length>=1
+}
+
 function replySuggestions(intent:InboxIntent,lastRaw:string){
  const last=lastRaw.toLowerCase()
+ const hasSubject=hasSpecificSubject(lastRaw,intent)
 
  if(intent==='product'){
-  if(includesAny(last,['medida','medidas','tamaño','tamano']))return [
-   '¡Hola! Claro. Te confirmo las medidas. ¿Me indicás el modelo exacto que estás viendo?',
+  if(includesAny(last,['medida','medidas','tamaño','tamano']))return hasSubject?[
+   '¡Hola! Claro. Reviso las medidas de ese modelo y te las confirmo.',
+   '¡Hola! Sí. Te confirmo las medidas exactas de ese producto.'
+  ]:[
+   '¡Hola! Claro. ¿Me indicás el modelo exacto que estás viendo? Así te confirmo las medidas.',
    '¡Hola! Sí. Decime qué modelo es y te paso las medidas correspondientes.'
   ]
-  if(last.includes('material'))return [
+  if(last.includes('material'))return hasSubject?[
+   '¡Hola! Claro. Reviso el material de ese producto y te lo confirmo.',
+   '¡Hola! Sí. Te confirmo de qué material está hecho ese modelo.'
+  ]:[
    '¡Hola! Claro. ¿Me indicás qué producto o modelo estás viendo? Así te confirmo el material exacto.',
    '¡Hola! Sí. Pasame el nombre del producto y te confirmo de qué material está hecho.'
   ]
-  if(last.includes('color'))return [
+  if(last.includes('color'))return hasSubject?[
+   '¡Hola! Claro. Reviso los colores disponibles para ese producto y te confirmo.',
+   '¡Hola! Sí. Te confirmo las variantes de color disponibles para ese modelo.'
+  ]:[
    '¡Hola! Claro. ¿Qué producto o modelo estás viendo? Así te confirmo los colores disponibles.',
    '¡Hola! Sí. Decime el modelo y te confirmo qué colores hay para ese producto.'
   ]
   if(last.includes('sirve para'))return [
-   '¡Hola! Claro. Contame para qué lo querés usar y qué modelo estás viendo, así te oriento mejor.',
-   '¡Hola! Sí. Decime qué producto estás viendo y para qué espacio o uso lo necesitás.'
+   '¡Hola! Claro. Contame para qué lo querés usar y te digo si ese producto te sirve.',
+   '¡Hola! Sí. Decime para qué espacio o uso lo necesitás y te oriento.'
   ]
-  return ['¡Hola! Claro. Decime qué producto estás viendo y qué dato necesitás, así te paso la información correcta.','¡Hola! Sí. Pasame el nombre del producto y te ayudo con la información que necesites.']
+  return hasSubject?['¡Hola! Claro. Reviso la información de ese producto y te ayudo con lo que necesites.','¡Hola! Sí. Te confirmo los datos de ese modelo.']:['¡Hola! Claro. Decime qué producto estás viendo y qué dato necesitás, así te paso la información correcta.','¡Hola! Sí. Pasame el nombre del producto y te ayudo con la información que necesites.']
  }
 
- if(intent==='availability')return [
+ if(intent==='availability')return hasSubject?[
+  '¡Hola! Claro. Reviso esa variante y te confirmo la disponibilidad exacta.',
+  '¡Hola! Sí. Verifico el stock de ese producto y te confirmo.'
+ ]:[
   '¡Hola! Claro. ¿Me indicás el producto, medida y color que buscás? Así revisamos la disponibilidad exacta.',
   '¡Hola! Sí. Pasame el modelo y la variante que necesitás y verificamos el stock.'
  ]
@@ -92,17 +118,23 @@ function replySuggestions(intent:InboxIntent,lastRaw:string){
  }
 
  if(intent==='price'){
-  if(includesAny(last,['promo','promoción','oferta','descuento']))return [
+  if(includesAny(last,['promo','promoción','oferta','descuento']))return hasSubject?[
+   '¡Hola! Claro. Reviso el precio actual de ese producto y si tiene alguna promoción vigente.',
+   '¡Hola! Sí. Te confirmo el precio y las promociones vigentes para esa variante.'
+  ]:[
    '¡Hola! Claro. ¿Qué producto o modelo estás viendo? Así te confirmo el precio y si tiene alguna promoción vigente.',
    '¡Hola! Sí. Pasame el producto y te confirmo el precio actual y las promociones que correspondan.'
   ]
-  return ['¡Hola! Claro. ¿Qué producto, modelo o medida estás viendo? Así te confirmo el precio exacto.','¡Hola! Sí. Pasame el nombre del producto o la variante y te confirmo el precio actual.']
+  return hasSubject?['¡Hola! Claro. Reviso el precio de ese producto y te lo confirmo.','¡Hola! Sí. Te confirmo el precio actual de esa variante.']:['¡Hola! Claro. ¿Qué producto, modelo o medida estás viendo? Así te confirmo el precio exacto.','¡Hola! Sí. Pasame el nombre del producto o la variante y te confirmo el precio actual.']
  }
 
  if(intent==='payment'){
-  if(last.includes('cuotas'))return [
-   '¡Hola! Claro. ¿Querés que te detalle las opciones de cuotas disponibles?',
-   '¡Hola! Sí. Te paso las alternativas de pago en cuotas disponibles.'
+  if(last.includes('cuotas'))return hasSubject?[
+   '¡Hola! Claro. Reviso las opciones de cuotas disponibles para ese producto y te confirmo.',
+   '¡Hola! Sí. Te confirmo las alternativas de pago en cuotas para ese producto.'
+  ]:[
+   '¡Hola! Claro. ¿Qué producto estás viendo? Así te confirmo las opciones de cuotas disponibles.',
+   '¡Hola! Sí. Decime qué producto querés comprar y te paso las alternativas de pago en cuotas.'
   ]
   if(last.includes('transferencia'))return [
    '¡Hola! Sí, podemos revisar la opción de pago por transferencia. ¿Querés que te pase el detalle?',
