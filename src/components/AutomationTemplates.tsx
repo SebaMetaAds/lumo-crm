@@ -1,6 +1,6 @@
 'use client'
 import {useEffect,useState} from 'react'
-import {Flame,MessageSquareText,PackageCheck,Truck,TriangleAlert,X,Zap} from 'lucide-react'
+import {CreditCard,Flame,MessageSquareText,PackageCheck,ScanSearch,Tag,Truck,TriangleAlert,X,Zap} from 'lucide-react'
 import {supabase} from '@/lib/supabase'
 
 type Template={key:string;name:string;description:string;intent:string;icon:any;actions:{type:string;value:string}[]}
@@ -12,6 +12,9 @@ const templates:Template[]=[
  {key:'hot',name:'Detectar clientes calientes',description:'Cuando detecta intención de compra, etiqueta Cliente caliente y sube la prioridad a Alta.',intent:'purchase',icon:Flame,actions:[{type:'add_tag',value:'Cliente caliente'},{type:'set_priority',value:'high'}]},
  {key:'draft-stock',name:'Preparar borrador para stock',description:'Cuando detecta una consulta de stock, prepara una respuesta sugerida en el Inbox. Nunca la envía sin tu aprobación.',intent:'availability',icon:MessageSquareText,actions:[{type:'draft_reply',value:'__suggested__'}]},
  {key:'draft-shipping',name:'Preparar borrador para envíos',description:'Cuando detecta una consulta de envío, prepara una respuesta sugerida lista para revisar y enviar.',intent:'shipping',icon:MessageSquareText,actions:[{type:'draft_reply',value:'__suggested__'}]},
+ {key:'draft-price',name:'Preparar borrador para precios',description:'Cuando detecta una consulta de precio, prepara una respuesta para revisar sin asumir valores que Lumo todavía no conoce.',intent:'price',icon:Tag,actions:[{type:'draft_reply',value:'__suggested__'}]},
+ {key:'draft-payment',name:'Preparar borrador para pagos',description:'Cuando detecta una consulta sobre cuotas o medios de pago, prepara un borrador pendiente de aprobación.',intent:'payment',icon:CreditCard,actions:[{type:'draft_reply',value:'__suggested__'}]},
+ {key:'draft-product',name:'Preparar borrador para producto',description:'Cuando detecta una consulta de medidas, material, color o uso, prepara una respuesta para completar con la información del producto.',intent:'product',icon:ScanSearch,actions:[{type:'draft_reply',value:'__suggested__'}]},
 ]
 
 export default function AutomationTemplates(){
