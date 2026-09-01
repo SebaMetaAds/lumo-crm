@@ -2,6 +2,8 @@
 import {useEffect} from 'react'
 import {supabase} from '@/lib/supabase'
 
+type Draft={id?:string;body?:string;created_at?:string;intent?:string}
+
 export default function AutomationDraftBridge(){
  useEffect(()=>{
   let cancelled=false
@@ -27,26 +29,26 @@ export default function AutomationDraftBridge(){
    textarea.scrollIntoView({block:'nearest',behavior:'smooth'})
   }
 
-  async function consumeDraft(conversationId:string,key:string,reason:'used'|'dismissed'){
+  async function consumeDraft(conversationId:string,draftId:string,key:string,reason:'used'|'dismissed'){
    consumedKeys.add(key)
-   const {error}=await supabase.rpc('consume_automation_draft',{p_conversation_id:conversationId,p_reason:reason})
+   const {error}=await supabase.rpc('consume_automation_draft',{p_conversation_id:conversationId,p_reason:reason,p_draft_id:draftId||null})
    if(error){
     consumedKeys.delete(key)
     console.error('Could not consume automation draft',error)
    }
   }
 
-  function mountDraft(body:string,createdAt:string,conversationId:string){
-   const composer=document.querySelector<HTMLElement>('.composer')
-   if(!composer)return
-   const parent=composer.parentElement
-   if(!parent)return
+  function removeMountedDrafts(){
+   document.querySelectorAll('.lumo-automation-draft').forEach(el=>el.remove())
+  }
 
-   const existing=document.querySelector<HTMLElement>('.lumo-automation-draft')
-   const key=`${createdAt}:${body}`
-   if(consumedKeys.has(key)){existing?.remove();return}
-   if(existing?.dataset.draftKey===key)return
-   existing?.remove()
+  function buildDraft(draft:Draft,conversationId:string){
+   const body=String(draft?.body||'').trim()
+   if(!body)return null
+   const draftId=String(draft?.id||'')
+   const createdAt=String(draft?.created_at||'')
+   const key=draftId||`${createdAt}:${body}`
+   if(consumedKeys.has(key))return null
 
    const box=document.createElement('div')
    box.className='lumo-automation-draft'
@@ -83,7 +85,7 @@ export default function AutomationDraftBridge(){
    use.addEventListener('click',()=>{
     fillComposer(body)
     box.remove()
-    void consumeDraft(conversationId,key,'used')
+    void consumeDraft(conversationId,draftId,key,'used')
    })
 
    const dismiss=document.createElement('button')
@@ -92,7 +94,7 @@ export default function AutomationDraftBridge(){
    dismiss.textContent='Ocultar'
    dismiss.addEventListener('click',()=>{
     box.remove()
-    void consumeDraft(conversationId,key,'dismissed')
+    void consumeDraft(conversationId,draftId,key,'dismissed')
    })
 
    actions.append(use,dismiss)
@@ -107,22 +109,38 @@ export default function AutomationDraftBridge(){
    preview.style.wordBreak='break-word'
 
    box.append(top,preview)
-   parent.insertBefore(box,composer)
+   return box
+  }
+
+  function mountDrafts(drafts:Draft[],conversationId:string){
+   const composer=document.querySelector<HTMLElement>('.composer')
+   if(!composer)return
+   const parent=composer.parentElement
+   if(!parent)return
+
+   removeMountedDrafts()
+   for(const draft of drafts){
+    const box=buildDraft(draft,conversationId)
+    if(box)parent.insertBefore(box,composer)
+   }
   }
 
   async function applyDraft(){
    if(cancelled)return
    const handle=currentHandle()
-   if(!handle){document.querySelector('.lumo-automation-draft')?.remove();return}
+   if(!handle){removeMountedDrafts();return}
 
    const {data:channel}=await supabase.from('contact_channels').select('contact_id').eq('channel','instagram').eq('handle',handle).limit(1).maybeSingle()
    if(cancelled||!channel?.contact_id)return
    const {data:conv}=await supabase.from('conversations').select('id,metadata').eq('contact_id',channel.contact_id).order('last_message_at',{ascending:false}).limit(1).maybeSingle()
    if(cancelled||!conv?.id)return
-   const draft=(conv.metadata as any)?.automation_draft_reply
-   const body=String(draft?.body||'').trim()
-   if(!body){document.querySelector('.lumo-automation-draft')?.remove();return}
-   mountDraft(body,String(draft?.created_at||''),conv.id)
+
+   const metadata=conv.metadata as any
+   let drafts:Array<Draft>=Array.isArray(metadata?.automation_draft_replies)?metadata.automation_draft_replies:[]
+   if(!drafts.length&&metadata?.automation_draft_reply)drafts=[metadata.automation_draft_reply]
+   drafts=drafts.filter(d=>String(d?.body||'').trim()).slice(-5)
+   if(!drafts.length){removeMountedDrafts();return}
+   mountDrafts(drafts,conv.id)
   }
 
   let pending=false
