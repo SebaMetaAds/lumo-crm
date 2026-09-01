@@ -6,6 +6,7 @@ import InboxOpportunityBar from '@/components/InboxOpportunityBar'
 import InboxMediaBridge from '@/components/InboxMediaBridge'
 import QuickRepliesBridge from '@/components/QuickRepliesBridge'
 import InboxTagBridge from '@/components/InboxTagBridge'
+import AutomationDraftBridge from '@/components/AutomationDraftBridge'
 import {supabase} from '@/lib/supabase'
 import '@/app/inbox-v6.css'
 
@@ -157,6 +158,7 @@ export default function InboxV6(){
   <InboxMediaBridge/>
   <QuickRepliesBridge/>
   <InboxTagBridge/>
+  <AutomationDraftBridge/>
   <div className="inbox-v6-floating-tools">
    <button className="v6-tool" title="Conversación anterior" onClick={()=>move(-1)}><ChevronLeft size={15}/></button>
    <button className="v6-tool" title="Conversación siguiente" onClick={()=>move(1)}><ChevronRight size={15}/></button>
